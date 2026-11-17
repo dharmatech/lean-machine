@@ -31,7 +31,7 @@ SDL_VIDEO_DRIVER=dummy .lake/build/bin/desktop --frames 20   # the same, with no
 ```
 
 `--test` writes `after-script.png` and `after-undo.png` in the current
-directory.
+directory, and `sampler.png`, one of each kind of picture.
 
 Needs Lean 4.36 through elan (`lean-toolchain` pins it), Cairo, and SDL3's
 shared library. SDL3's headers (`libsdl3-dev`) are not needed.
@@ -43,7 +43,10 @@ The Lean code is one module per file in `LeanMachine/`, in the
 `World`, `Desktop` and `View` are pure and import only each other. Only
 `Host` calls C, and only `Host` and `Main.lean` touch `IO`.
 
-- `Picture.lean`: `Picture`, plain data (rectangles, text, groups).
+- `Picture.lean`: `Picture`, plain data: rectangles, circles, rings,
+  lines, text at a point or aligned in a box, a picture moved
+  (`translate`) or cut to a box (`clip`), and groups. Cairo measures text
+  for `textIn` when it draws, so a view can center text and stay pure.
 - `World.lean`: windows, the pointer and events.
   `World.step : World → Event → World` drags, raises, focuses, closes
   and opens windows.
@@ -90,5 +93,5 @@ The Lean code is one module per file in `LeanMachine/`, in the
 
 - Apps as a protocol: an `App` whose `step` and `view` return new apps,
   so the desktop holds an open list of them.
-- Measure text through Cairo, for layout.
+- Measure text in the view, for layout that wraps (Notes, a REPL).
 - Display scaling and a resizable window.

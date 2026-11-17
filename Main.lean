@@ -28,6 +28,40 @@ partial def run (c : Canvas) (d : Desktop) (frames : Option Nat) : IO Unit := do
   Host.present c
   run c d (frames.map (· - 1))
 
+-- One of each kind of picture, for `--test`: lines, circles, text placed in
+-- boxes, and a picture moved and cut to a box.
+def sampler : Picture :=
+  let label (x y : Float) (s : String) : Picture := .text x y 13 0x7aa2f7 s
+  let box (y : Float) (a : Align) (s : String) : Picture :=
+    .group [.rect 40 y 260 40 6 0x414868, .rect 42 (y + 2) 256 36 5 0x1a1b26,
+            .textIn 54 y 236 40 16 a 0xc0caf5 s]
+  .group [
+    .rect 0 0 screenW screenH 0 0x24283b,
+    label 40 40 "line, 1 to 6 wide",
+    .group ((List.range 6).map fun i =>
+      let x := 40 + 36 * i.toFloat
+      .line x 60 (x + 24) 160 (i.toFloat + 1) 0x7aa2f7),
+    label 300 40 "circle and ring",
+    .circle 360 110 50 0x9ece6a,
+    .ring 490 110 50 4 0xe0af68,
+    label 40 220 "textIn: left, center, right",
+    box 236 .left "left", box 284 .center "center", box 332 .right "right",
+    label 360 220 "lines at angles",
+    .ring 440 320 70 2 0x565f89,
+    .group ((List.range 12).map fun i =>
+      let a := i.toFloat * pi / 6
+      .line (440 + 52 * a.sin) (320 - 52 * a.cos)
+            (440 + 66 * a.sin) (320 - 66 * a.cos) 3 0xc0caf5),
+    label 620 40 "translate, then clip to the gray box",
+    .translate 620 60 (.group [
+      .rect 0 0 200 120 0 0x414868,
+      .clip 0 0 200 120 (.group [
+        .circle 200 120 70 0xf7768e,
+        .textIn 0 0 200 120 40 .center 0xc0caf5 "clipped text"])]),
+    -- Drawn after the translate and clip: where it is says both were undone.
+    label 620 220 "after them, back where it was",
+    .circle 640 250 12 0xbb9af7 ]
+
 -- The pure world, driven by a script of events instead of a person.
 def test (c : Canvas) : IO Unit := do
   let grab := Event.press 300 (160 + 10)          -- Clock's title
@@ -44,6 +78,7 @@ def test (c : Canvas) : IO Unit := do
   let d := (d.step (.key keyU)).step (.key keyU)
   IO.println s!"after two undos: {d.now.windows.map (·.title)}"
   render c d.view; c.savePng "after-undo.png"
+  render c sampler; c.savePng "sampler.png"
 
 def main (args : List String) : IO Unit := do
   let c ← Canvas.new screenW.toUInt32 screenH.toUInt32

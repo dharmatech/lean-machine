@@ -51,15 +51,102 @@ LEAN_EXPORT lean_obj_res sv_fill_rect(b_lean_obj_arg c, double x, double y,
   return unit();
 }
 
-LEAN_EXPORT lean_obj_res sv_text(b_lean_obj_arg c, double x, double y,
-    double size, uint32_t rgb, b_lean_obj_arg s, lean_obj_arg io) {
+LEAN_EXPORT lean_obj_res sv_circle(b_lean_obj_arg c, double cx, double cy,
+    double r, uint32_t rgb, lean_obj_arg io) {
   cairo_t *cr = cr_of(c);
+  cairo_new_path(cr);   // or the arc starts with a line from the last point
+  cairo_arc(cr, cx, cy, r, 0, 2 * M_PI);
+  set_rgb(cr, rgb);
+  cairo_fill(cr);
+  return unit();
+}
+
+LEAN_EXPORT lean_obj_res sv_ring(b_lean_obj_arg c, double cx, double cy,
+    double r, double width, uint32_t rgb, lean_obj_arg io) {
+  cairo_t *cr = cr_of(c);
+  cairo_new_path(cr);
+  cairo_arc(cr, cx, cy, r, 0, 2 * M_PI);
+  cairo_set_line_width(cr, width);
+  set_rgb(cr, rgb);
+  cairo_stroke(cr);
+  return unit();
+}
+
+LEAN_EXPORT lean_obj_res sv_line(b_lean_obj_arg c, double x1, double y1,
+    double x2, double y2, double width, uint32_t rgb, lean_obj_arg io) {
+  cairo_t *cr = cr_of(c);
+  cairo_new_path(cr);
+  cairo_move_to(cr, x1, y1);
+  cairo_line_to(cr, x2, y2);
+  cairo_set_line_width(cr, width);
+  cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+  set_rgb(cr, rgb);
+  cairo_stroke(cr);
+  return unit();
+}
+
+static void set_font(cairo_t *cr, double size) {
   cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL,
                          CAIRO_FONT_WEIGHT_BOLD);
   cairo_set_font_size(cr, size);
+}
+
+LEAN_EXPORT lean_obj_res sv_text(b_lean_obj_arg c, double x, double y,
+    double size, uint32_t rgb, b_lean_obj_arg s, lean_obj_arg io) {
+  cairo_t *cr = cr_of(c);
+  set_font(cr, size);
   set_rgb(cr, rgb);
   cairo_move_to(cr, x, y);
   cairo_show_text(cr, lean_string_cstr(s));
+  return unit();
+}
+
+// Text in the box (x, y, w, h): placed across it by `align` (Lean passes
+// its `Align` as a byte: 0 left, 1 center, 2 right) and centered top to
+// bottom. Cairo measures it here, so the view that makes it stays pure.
+LEAN_EXPORT lean_obj_res sv_text_in(b_lean_obj_arg c, double x, double y,
+    double w, double h, double size, uint8_t align, uint32_t rgb,
+    b_lean_obj_arg s, lean_obj_arg io) {
+  cairo_t *cr = cr_of(c);
+  const char *str = lean_string_cstr(s);
+  set_font(cr, size);
+  cairo_text_extents_t te;
+  cairo_text_extents(cr, str, &te);
+  cairo_font_extents_t fe;
+  cairo_font_extents(cr, &fe);
+  double left = align == 0 ? x
+              : align == 1 ? x + (w - te.x_advance) / 2
+              : x + w - te.x_advance;
+  double baseline = y + (h + fe.ascent - fe.descent) / 2;
+  set_rgb(cr, rgb);
+  cairo_move_to(cr, left, baseline);
+  cairo_show_text(cr, str);
+  return unit();
+}
+
+// `translate` and `clip` last until the matching restore.
+LEAN_EXPORT lean_obj_res sv_save(b_lean_obj_arg c, lean_obj_arg io) {
+  cairo_save(cr_of(c));
+  return unit();
+}
+
+LEAN_EXPORT lean_obj_res sv_restore(b_lean_obj_arg c, lean_obj_arg io) {
+  cairo_restore(cr_of(c));
+  return unit();
+}
+
+LEAN_EXPORT lean_obj_res sv_translate(b_lean_obj_arg c, double dx, double dy,
+                                      lean_obj_arg io) {
+  cairo_translate(cr_of(c), dx, dy);
+  return unit();
+}
+
+LEAN_EXPORT lean_obj_res sv_clip(b_lean_obj_arg c, double x, double y,
+                                 double w, double h, lean_obj_arg io) {
+  cairo_t *cr = cr_of(c);
+  cairo_new_path(cr);
+  cairo_rectangle(cr, x, y, w, h);
+  cairo_clip(cr);
   return unit();
 }
 
