@@ -12,9 +12,12 @@ dot notation, and no mutation? The name is a working title.
 ## Run
 
 ```sh
-./build.sh
-./desktop
+lake build                 # writes .lake/build/bin/desktop
+.lake/build/bin/desktop
 ```
+
+`lake exe desktop` does both: it builds if anything changed, then runs
+the desktop with any arguments that follow.
 
 Drag a window by its title, click one to raise it, click the box on a
 title to close it, press N for a new window at the pointer, U to undo, Esc
@@ -22,12 +25,13 @@ to quit. The bar at the bottom counts the earlier worlds that undo can
 return to.
 
 ```sh
-./desktop --test        # the pure world, driven by a script of events
-./desktop --frames 20   # stops after 20 frames
-SDL_VIDEO_DRIVER=dummy ./desktop --frames 20   # the same, with no display
+.lake/build/bin/desktop --test        # the pure world, driven by a script of events
+.lake/build/bin/desktop --frames 20   # stops after 20 frames
+SDL_VIDEO_DRIVER=dummy .lake/build/bin/desktop --frames 20   # the same, with no display
 ```
 
-`--test` writes `after-script.png` and `after-undo.png`.
+`--test` writes `after-script.png` and `after-undo.png` in the current
+directory.
 
 Needs Lean 4.36 through elan (`lean-toolchain` pins it), Cairo, and SDL3's
 shared library. SDL3's headers (`libsdl3-dev`) are not needed.
@@ -43,7 +47,7 @@ shared library. SDL3's headers (`libsdl3-dev`) are not needed.
     code that draws, `run` the only code that does I/O.
 - `shim.c` is the only C: Cairo draws into an image in memory, and SDL3
   shows it in one window and hands back events. No GPU in the design.
-- `build.sh` compiles both and links them.
+- `lakefile.lean` compiles both and links them.
 
 ## Findings so far
 
@@ -62,7 +66,7 @@ shared library. SDL3's headers (`libsdl3-dev`) are not needed.
   `/usr/lib/x86_64-linux-gnu` pulls in the system's start files and fails.
   That C library is old: no `gettid` (use `syscall(SYS_gettid)`).
 - **Compiling C.** `leanc`'s bundled clang has no system headers
-  (`math.h`), so `build.sh` compiles `shim.c` with the system `cc`.
+  (`math.h`), so the lakefile compiles `shim.c` with the system `cc`.
 - **SDL3 without headers.** `shim.c` declares the ten SDL calls it uses
   and reads event fields at the offsets Schevana v0 reads.
 - **Bindings.** There are no Lean bindings for Cairo. There are some for
@@ -72,7 +76,7 @@ shared library. SDL3's headers (`libsdl3-dev`) are not needed.
 
 ## Ideas for next
 
-- Split `Main.lean` into modules (world, view, host) and move to Lake.
+- Split `Main.lean` into modules (world, view, host).
 - Apps as a protocol: an `App` whose `step` and `view` return new apps,
   so the desktop holds an open list of them.
 - Measure text through Cairo, for layout.

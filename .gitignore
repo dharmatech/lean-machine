@@ -1,6 +1,4 @@
 # build products
-Main.c
-*.o
-/desktop
-# written by ./desktop --test
+.lake/
+# written by desktop --test
 *.png
