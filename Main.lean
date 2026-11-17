@@ -65,8 +65,12 @@ def sampler : Picture :=
 -- The pure world, driven by a script of events instead of a person.
 def test (c : Canvas) : IO Unit := do
   let grab := Event.press 300 (160 + 10)          -- Clock's title
+  -- Clock's body starts at (623, 518) once Clock is at (620, 490), so this
+  -- press drops a dot at (40, 60) in Clock's own coordinates.
+  let dot := Event.press (623 + 40) (518 + 60)
   let script := [grab, .motion 700 500, .release 700 500,
                  .key keyN,                         -- a window at the pointer
+                 dot,
                  .press (80 + 420 - 15) (70 + 14)]  -- REPL's close box
   let d := script.foldl Desktop.step start
   IO.println s!"after the script: {d.now.windows.map (·.title)}, \

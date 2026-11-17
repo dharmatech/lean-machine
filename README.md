@@ -21,7 +21,8 @@ the desktop with any arguments that follow.
 
 Drag a window by its title, click one to raise it, click the box on a
 title to close it, press N for a new window at the pointer, U to undo, Esc
-to quit. The bar at the bottom counts the earlier worlds that undo can
+to quit. Every window runs a placeholder app for now: click in one to
+drop a dot. The bar at the bottom counts the earlier worlds that undo can
 return to.
 
 ```sh
@@ -40,20 +41,31 @@ shared library. SDL3's headers (`libsdl3-dev`) are not needed.
 
 The Lean code is one module per file in `LeanMachine/`, in the
 `LeanMachine` namespace, with a thin `Main.lean` on top. `Picture`,
-`World`, `Desktop` and `View` are pure and import only each other. Only
+`App`, the apps in `Apps/`, `World`, `Desktop` and `View` are pure and
+import only each other. Only
 `Host` calls C, and only `Host` and `Main.lean` touch `IO`.
 
 - `Picture.lean`: `Picture`, plain data: rectangles, circles, rings,
   lines, text at a point or aligned in a box, a picture moved
   (`translate`) or cut to a box (`clip`), and groups. Cairo measures text
   for `textIn` when it draws, so a view can center text and stay pure.
-- `World.lean`: windows, the pointer and events.
-  `World.step : World → Event → World` drags, raises, focuses, closes
-  and opens windows.
+- `App.lean`: an `App` is a value with a title, a `view` at a given
+  size, and a `step` that returns the app an event makes (`none`: no
+  change). `App.of` makes one from a state of any type, a step and a
+  view, and hides the state's type, so the desktop holds apps of every
+  kind in one list. `AppEvent` is an event in the app's own coordinates.
+- `Apps/Placeholder.lean`: stands in for apps not written yet. A click
+  drops a dot where it lands.
+- `World.lean`: windows, the pointer and events. Each window holds an
+  app. `World.step : World → Event → World` drags, raises, focuses and
+  closes windows, and passes other events to the focused window's app,
+  moved into the app's coordinates. `World.launch` opens an app in a new
+  window.
 - `Desktop.lean`: `Desktop` is the world now and every world before it;
-  undo takes the previous one. Also `start`, the desktop the program
-  starts with.
-- `View.lean`: `Desktop.view` returns a `Picture`.
+  undo takes the previous one, apps' states included. Also `start`, the
+  desktop the program starts with.
+- `View.lean`: `Desktop.view` returns a `Picture`. Each app's view is
+  moved to its window's body and cut to it.
 - `Host.lean`: the calls into `shim.c` (a canvas and one window),
   `Event.decode` for the events the shim hands back, and `render`, the
   only code that draws.
@@ -88,10 +100,20 @@ The Lean code is one module per file in `LeanMachine/`, in the
   SDL3 ([ValorZard](https://reservoir.lean-lang.org/@ValorZard/SDL3)) and
   raylib ([Raylib.lean](https://github.com/KislyjKisel/Raylib.lean)), but a
   `Picture` needs only a few coarse C calls, so owning them is cheap.
+- **An app can't always return an app.** `step : AppEvent → App` type
+  checks, but the type has no values: building one needs an `App`
+  already. `step` returns `Option App`, and `none` ends the chain. An app
+  that keeps state refers to itself, so it can't be total; `App.of` is
+  the one `partial` definition, and apps passed to it stay total.
+- **Apps are opaque.** The state inside an app is in closures, so nothing
+  outside it, an Inspector included, can look at it. An app could later
+  offer a description of itself.
 
 ## Ideas for next
 
-- Apps as a protocol: an `App` whose `step` and `view` return new apps,
-  so the desktop holds an open list of them.
+- A clock app, with time coming in as tick events.
+- A menu that opens apps, replacing N's placeholder window.
+- The desktop's keys (N, U) behind a modifier: apps never hear N or U
+  now, so none could take typing.
 - Measure text in the view, for layout that wraps (Notes, a REPL).
 - Display scaling and a resizable window.
