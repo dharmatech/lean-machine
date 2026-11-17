@@ -1,4 +1,5 @@
 import LeanMachine.Picture
+import LeanMachine.Key
 
 /-! # Apps: what runs in a window
 
@@ -13,7 +14,7 @@ structure TimeOfDay where
   hour : Nat     -- 0 to 23
   minute : Nat
   second : Nat
-  deriving BEq, Inhabited
+  deriving BEq, Inhabited, Repr
 
 -- An event as an app hears it. Positions are in the app's own coordinates:
 -- (0, 0) is the top left of its window's body.
@@ -21,7 +22,8 @@ inductive AppEvent where
   | press (x y : Float)
   | release (x y : Float)
   | motion (x y : Float)
-  | key (code : UInt32)
+  | key (k : Key) (mods : Mods)
+  | text (s : String)      -- typed: a character, or what an input method made
   | tick (t : TimeOfDay)   -- many times a second, to every app
 
 -- `step` returns `none` when the event changes nothing. It can't return an

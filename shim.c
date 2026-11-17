@@ -1,6 +1,7 @@
 // The only C: a Cairo canvas, and one SDL3 host window that shows it and
 // hands back events. SDL3's headers aren't installed, so the few calls and
-// event offsets used are declared here (the same offsets Schevana v0 reads).
+// event offsets used are declared here (the same offsets Schevana v0 reads:
+// a key's code at 28 and modifiers at 32, a text event's string at 24).
 #include <lean/lean.h>
 #include <cairo.h>
 #include <math.h>
@@ -101,6 +102,48 @@ LEAN_EXPORT lean_obj_res sv_text(b_lean_obj_arg c, double x, double y,
   return unit();
 }
 
+static void set_mono(cairo_t *cr, double size) {
+  cairo_select_font_face(cr, "Monospace", CAIRO_FONT_SLANT_NORMAL,
+                         CAIRO_FONT_WEIGHT_NORMAL);
+  cairo_set_font_size(cr, size);
+}
+
+// Monospaced text from its baseline, character i at x + i * advance. Lean
+// chooses the advance (`monoAdvance`), so a pure view knows where every
+// character is without measuring. Cairo's toy text API turns each
+// character into one glyph, so glyph i is character i.
+LEAN_EXPORT lean_obj_res sv_mono(b_lean_obj_arg c, double x, double y,
+    double size, double advance, uint32_t rgb, b_lean_obj_arg s,
+    lean_obj_arg io) {
+  cairo_t *cr = cr_of(c);
+  set_mono(cr, size);
+  set_rgb(cr, rgb);
+  cairo_glyph_t *glyphs = NULL;
+  int n = 0;
+  if (cairo_scaled_font_text_to_glyphs(cairo_get_scaled_font(cr), x, y,
+        lean_string_cstr(s), (int)lean_string_size(s) - 1, &glyphs, &n,
+        NULL, NULL, NULL) == CAIRO_STATUS_SUCCESS) {
+    for (int i = 0; i < n; i++) {
+      glyphs[i].x = x + i * advance;
+      glyphs[i].y = y;
+    }
+    cairo_show_glyphs(cr, glyphs, n);
+  }
+  cairo_glyph_free(glyphs);
+  return unit();
+}
+
+// The monospace font's own advance, in ems, to compare with Lean's grid.
+LEAN_EXPORT lean_obj_res sv_mono_em(b_lean_obj_arg c, lean_obj_arg io) {
+  cairo_t *cr = cr_of(c);
+  cairo_save(cr);
+  set_mono(cr, 1000);   // big, so rounding to pixels doesn't show
+  cairo_text_extents_t te;
+  cairo_text_extents(cr, "M", &te);
+  cairo_restore(cr);
+  return lean_io_result_mk_ok(lean_box_float(te.x_advance / 1000));
+}
+
 // Text in the box (x, y, w, h): placed across it by `align` (Lean passes
 // its `Align` as a byte: 0 left, 1 center, 2 right) and centered top to
 // bottom. Cairo measures it here, so the view that makes it stays pure.
@@ -175,6 +218,8 @@ extern bool SDL_RenderPresent(SDL_Renderer *r);
 extern bool SDL_WaitEventTimeout(void *event, int32_t ms);
 extern bool SDL_PollEvent(void *event);
 extern const char *SDL_GetError(void);
+extern bool SDL_StartTextInput(SDL_Window *win);
+extern uint16_t SDL_GetModState(void);
 
 #define SDL_INIT_VIDEO 0x20u
 #define SDL_PIXELFORMAT_ARGB8888 0x16362004u   // Cairo's ARGB32, same bytes
@@ -198,6 +243,8 @@ LEAN_EXPORT lean_obj_res sv_host_open(b_lean_obj_arg title, uint32_t w,
   host_texture = SDL_CreateTexture(host_renderer, SDL_PIXELFORMAT_ARGB8888,
                                    SDL_TEXTUREACCESS_STREAMING, w, h);
   if (!host_texture) return sdl_error();
+  // Without this SDL sends keys but no text.
+  SDL_StartTextInput(win);
   return unit();
 }
 
@@ -211,31 +258,45 @@ LEAN_EXPORT lean_obj_res sv_host_present(b_lean_obj_arg c, lean_obj_arg io) {
   return unit();
 }
 
-static lean_obj_res event4(double kind, double a, double b, double c) {
+// A `RawEvent` (Host.lean): [kind, a, b, c] and a string. Lean lays out a
+// structure of two boxed fields as a constructor with two fields.
+static lean_obj_res raw_event(double kind, double a, double b, double c,
+                              const char *text) {
   lean_object *arr = lean_alloc_sarray(sizeof(double), 4, 4);
   double *p = lean_float_array_cptr(arr);
   p[0] = kind; p[1] = a; p[2] = b; p[3] = c;
-  return lean_io_result_mk_ok(arr);
+  lean_object *ev = lean_alloc_ctor(0, 2, 0);
+  lean_ctor_set(ev, 0, arr);
+  lean_ctor_set(ev, 1, lean_mk_string(text));
+  return lean_io_result_mk_ok(ev);
 }
 
 static float f32_at(const uint8_t *e, int i) { float f; memcpy(&f, e + i, 4); return f; }
 static uint32_t u32_at(const uint8_t *e, int i) { uint32_t u; memcpy(&u, e + i, 4); return u; }
+static uint16_t u16_at(const uint8_t *e, int i) { uint16_t u; memcpy(&u, e + i, 2); return u; }
 
-// The next event as [kind, a, b, c]; kind 0 is "none before the timeout".
-// A timeout of 0 only polls.
+// The next event; kind 0 is "none before the timeout". A timeout of 0 only
+// polls. A key brings SDL's keycode and modifiers; text brings the
+// modifiers held as it was typed, and the text, which SDL frees at the
+// next poll, so it is copied into a Lean string here.
 LEAN_EXPORT lean_obj_res sv_host_event(uint32_t timeout, lean_obj_arg io) {
   uint64_t buf[16];             // SDL_Event is a 128-byte union
   uint8_t *e = (uint8_t *)buf;
   for (;;) {
     bool got = timeout ? SDL_WaitEventTimeout(e, (int32_t)timeout)
                        : SDL_PollEvent(e);
-    if (!got) return event4(0, 0, 0, 0);
+    if (!got) return raw_event(0, 0, 0, 0, "");
     switch (u32_at(e, 0)) {
-      case 0x100: return event4(1, 0, 0, 0);                         // quit
-      case 0x401: return event4(2, f32_at(e, 28), f32_at(e, 32), e[24]); // press
-      case 0x402: return event4(3, f32_at(e, 28), f32_at(e, 32), e[24]); // release
-      case 0x400: return event4(4, f32_at(e, 28), f32_at(e, 32), 0);  // motion
-      case 0x300: return event4(5, u32_at(e, 28), 0, 0);             // key
+      case 0x100: return raw_event(1, 0, 0, 0, "");                         // quit
+      case 0x401: return raw_event(2, f32_at(e, 28), f32_at(e, 32), e[24], ""); // press
+      case 0x402: return raw_event(3, f32_at(e, 28), f32_at(e, 32), e[24], ""); // release
+      case 0x400: return raw_event(4, f32_at(e, 28), f32_at(e, 32), 0, "");  // motion
+      case 0x300: return raw_event(5, u32_at(e, 28), u16_at(e, 32), 0, ""); // key
+      case 0x303: {                                                          // text
+        const char *text;
+        memcpy(&text, e + 24, sizeof text);
+        return raw_event(6, SDL_GetModState(), 0, 0, text ? text : "");
+      }
       default: continue;
     }
   }

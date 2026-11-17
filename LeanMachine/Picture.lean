@@ -5,6 +5,12 @@ namespace LeanMachine
 -- Lean's `Float` has `sin` and `cos` but no π.
 def pi : Float := 3.141592653589793
 
+-- How far apart `mono` puts characters: each sits in a cell this wide.
+-- 0.6 em is the advance of DejaVu Sans Mono (0.602 em) and most other
+-- monospace fonts. Lean, not the font, decides it, so a view can measure
+-- monospace text and place a cursor without asking Cairo.
+def monoAdvance (size : Float) : Float := 0.6 * size
+
 -- Where text sits across its box. Top to bottom it is always centered.
 inductive Align where
   | left | center | right
@@ -16,6 +22,9 @@ inductive Picture where
   | line (x1 y1 x2 y2 width : Float) (rgb : UInt32)      -- round ends
   | text (x y size : Float) (rgb : UInt32) (s : String)  -- from its baseline
   | textIn (x y w h size : Float) (align : Align) (rgb : UInt32) (s : String)
+  -- Monospace text from its baseline; character i starts at
+  -- x + i * monoAdvance size.
+  | mono (x y size : Float) (rgb : UInt32) (s : String)
   -- The picture with its origin moved to (dx, dy).
   | translate (dx dy : Float) (p : Picture)
   -- The picture, cut to the box (x, y, w, h).

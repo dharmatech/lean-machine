@@ -22,11 +22,13 @@ def Desktop.undo (d : Desktop) : Desktop :=
   | prev :: rest => { now := prev, past := rest }
   | [] => d
 
--- U undoes. Whether anything else starts a step undo can return to is the
--- world's to say (`World.commits`): a press that does something.
+-- Ctrl+Shift+Z undoes. Whether anything else starts a step undo can
+-- return to is the world's to say (`World.commits`): a press that does
+-- something.
 def Desktop.step (d : Desktop) (e : Event) : Desktop :=
   match e with
-  | .key k => if k == keyU then d.undo else { d with now := d.now.step e }
+  | .key k m =>
+    if desktopKey 'z' k m then d.undo else { d with now := d.now.step e }
   | _ =>
     let next := d.now.step e
     if d.now.commits e then d.commit next else { d with now := next }

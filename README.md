@@ -19,13 +19,14 @@ lake build                 # writes .lake/build/bin/desktop
 `lake exe desktop` does both: it builds if anything changed, then runs
 the desktop with any arguments that follow.
 
-Right-click anywhere, or press N, for a menu of apps; choose one to open
-it in a new window where the menu was. Esc closes the menu, and so does a
-click off it. Drag a window by its title, click one to raise it, click
-the box on a title to close it, U to undo, Esc to quit. Clock is a clock;
-REPL, Inspector and Notes are placeholders for now: click in one to drop
-a dot. The bar at the bottom counts the earlier worlds that undo can
-return to.
+Right-click anywhere, or press Ctrl+Shift+N, for a menu of apps; choose
+one to open it in a new window where the menu was. Esc closes the menu,
+and so does a click off it. Drag a window by its title, click one to
+raise it, click the box on a title to close it, Ctrl+Shift+Z to undo, Esc
+to quit. Clock is a clock; REPL, Inspector and Notes are placeholders for
+now: click in one to drop a dot, or type into it to see the text and the
+last key, with its modifiers, that it heard. The bar at the bottom counts
+the earlier worlds that undo can return to.
 
 ```sh
 .lake/build/bin/desktop --test        # the pure world, driven by a script of events
@@ -35,7 +36,9 @@ SDL_VIDEO_DRIVER=dummy .lake/build/bin/desktop --frames 20   # the same, with no
 
 `--test` writes `after-script.png`, `after-undo.png` and `menu.png` (the
 menu open) in the current directory, and `sampler.png`, one of each kind
-of picture.
+of picture. It also prints what `Event.decode` makes of a few events as
+the shim hands them back, and the monospace font's own advance beside
+`monoAdvance`'s.
 
 Needs Lean 4.36 through elan (`lean-toolchain` pins it), Cairo, and SDL3's
 shared library. SDL3's headers (`libsdl3-dev`) are not needed.
@@ -43,52 +46,65 @@ shared library. SDL3's headers (`libsdl3-dev`) are not needed.
 ## How it's built
 
 The Lean code is one module per file in `LeanMachine/`, in the
-`LeanMachine` namespace, with a thin `Main.lean` on top. `Picture`,
+`LeanMachine` namespace, with a thin `Main.lean` on top. `Picture`, `Key`,
 `App`, the apps in `Apps/`, `World`, `Desktop` and `View` are pure and
 import only each other. Only `Host` calls C, and only `Host` and
 `Main.lean` touch `IO`.
 
 - `Picture.lean`: `Picture`, plain data: rectangles, circles, rings,
-  lines, text at a point or aligned in a box, a picture moved
-  (`translate`) or cut to a box (`clip`), and groups. Cairo measures text
-  for `textIn` when it draws, so a view can center text and stay pure.
+  lines, text at a point or aligned in a box, monospace text, a picture
+  moved (`translate`) or cut to a box (`clip`), and groups. Cairo measures
+  text for `textIn` when it draws, so a view can center text and stay
+  pure. Monospace text (`mono`) goes the other way: Lean decides that each
+  character takes `monoAdvance size` (0.6 em), and the shim puts every
+  glyph in its cell, so a view knows where each character is, and where a
+  cursor goes, without measuring.
+- `Key.lean`: `Key`, which key went down (a character key, in lower
+  case, or Enter, the arrows, Home and the like), and `Mods`, the Ctrl,
+  Shift and Alt held with it. `Key.show` writes one as "Ctrl+Shift+N".
+  The desktop's own keys are Ctrl+Shift and a letter (`desktopKey`).
 - `App.lean`: an `App` is a value with a title, a `view` at a given
   size, a `step` that returns the app an event makes (`none`: no
-  change), and the `size` a new window gives it. `App.of` makes one from a state of any type, a step and a
-  view, and hides the state's type, so the desktop holds apps of every
-  kind in one list. `AppEvent` is an event in the app's own coordinates,
-  or a tick with the `TimeOfDay`.
+  change), and the `size` a new window gives it. `App.of` makes one from
+  a state of any type, a step and a view, and hides the state's type, so
+  the desktop holds apps of every kind in one list. `AppEvent` is an
+  event in the app's own coordinates, a key with its modifiers, typed
+  text, or a tick with the `TimeOfDay`.
 - `Apps/Clock.lean`: an analog face with the time in digits under it,
   after Schevana's `apps/clock.ss`. `clockFace` is a pure function of the
   time and the size; the app keeps the last tick's time and changes only
   when the second does.
 - `Apps/Placeholder.lean`: stands in for apps not written yet. A click
-  drops a dot where it lands.
+  drops a dot where it lands; it shows what was typed into it and the
+  last key it heard.
 - `World.lean`: windows, the pointer, the menu and events. Each window
   holds an app. `World.step : World → Event → World` drags, raises,
   focuses and closes windows, passes ticks to every app, and passes other
-  events to the focused window's app, moved into the app's coordinates.
+  events, keys and text included, to the focused window's app, moved
+  into the app's coordinates. Ctrl+Shift+N opens the menu at the pointer.
   The world holds a `catalog` of apps, the menu's items, but knows none
   of them by name. `World.launch` opens an app in a new window, kept on
   the screen and told the time first. `World.commits` says which events
   start a step undo can return to: a press that does something.
 - `Desktop.lean`: `Desktop` is the world now and every world before it;
-  undo takes the previous one, apps' states included. Also `catalog`,
+  undo (Ctrl+Shift+Z) takes the previous one, apps' states included. Also `catalog`,
   what the menu opens, and `start`, the desktop the program starts with,
   opened with `launch` as the menu would.
 - `View.lean`: `Desktop.view` returns a `Picture`. Each app's view is
   moved to its window's body and cut to it. The menu draws over
   everything, its item under the pointer lit.
 - `Host.lean`: the calls into `shim.c` (a canvas and one window),
-  `Event.decode` for the events the shim hands back (the right button
-  is `Event.menu`), `localTime` (through
+  `Event.decode` for the events the shim hands back as a `RawEvent` (the
+  right button is `Event.menu`; SDL's keycodes and modifier bits become a
+  `Key` and `Mods`), `localTime` (through
   Lean's `Std.Time`), and `render`, the only code that draws.
 - `Main.lean`: `run`, the loop and the only code that does I/O. Each
   pass waits for events, but not past 100 ms or the next second, applies
   them, ticks with the time, and draws. Also `test` for `--test`, and
   `main`.
 - `shim.c` is the only C: Cairo draws into an image in memory, and SDL3
-  shows it in one window and hands back events. No GPU in the design.
+  shows it in one window and hands back events, text input included.
+  No GPU in the design.
 - `lakefile.lean` builds the `LeanMachine` library and `Main.lean`,
   compiles `shim.c`, and links them into `desktop`.
 
@@ -110,8 +126,34 @@ import only each other. Only `Host` calls C, and only `Host` and
   That C library is old: no `gettid` (use `syscall(SYS_gettid)`).
 - **Compiling C.** `leanc`'s bundled clang has no system headers
   (`math.h`), so the lakefile compiles `shim.c` with the system `cc`.
-- **SDL3 without headers.** `shim.c` declares the ten SDL calls it uses
-  and reads event fields at the offsets Schevana v0 reads.
+- **SDL3 without headers.** `shim.c` declares the twelve SDL calls it
+  uses and reads event fields at the offsets Schevana v0 reads: a key's
+  code at 28 and modifiers at 32, a text event's string at 24.
+- **Text out of the shim.** SDL sends text only after
+  `SDL_StartTextInput(window)`, as a pointer to a string it frees at the
+  next poll. `Host.event` returns a `RawEvent`, a structure of a
+  `FloatArray` and a `String`; Lean lays out a structure of two boxed
+  fields as a plain two-field constructor, so C builds it with
+  `lean_alloc_ctor(0, 2, 0)` and copies the text into it. One call per
+  event, and no text waiting in a C global.
+- **Keys and text are separate events.** A key brings SDL's keycode and
+  modifiers; typing brings text, as the layout and any input method made
+  it ("é", "N"). Apps insert text and act on keys. Text typed with Ctrl
+  held is dropped (the shim sends the modifiers along with it), so
+  Ctrl+Shift+N doesn't also type an N. SDL may give a letter key in upper
+  case when Shift is down, so `Key.ofSDL` lowers it.
+- **Ctrl+Shift+U belongs to IBus.** On GNOME, IBus takes Ctrl+Shift+U for
+  typing a character by its code point, before an app sees it, so the
+  desktop's undo is Ctrl+Shift+Z. Desktop keys follow Schevana's
+  Ctrl+Shift, which leaves plain letters, Shift and Ctrl alone (Ctrl+C,
+  say) to apps.
+- **Monospace on Lean's grid.** A pure view can't ask Cairo how wide text
+  is. For monospace text it doesn't have to: Lean fixes the advance at
+  0.6 em and the shim places glyph i at x + i·advance with
+  `cairo_show_glyphs` (Cairo's toy text API makes one glyph per
+  character). The font picked for "Monospace" here, DejaVu Sans Mono,
+  measures 0.602 em, so glyphs sit in their cells with no visible drift,
+  and a cursor or a click maps to a column by arithmetic.
 - **Bindings.** There are no Lean bindings for Cairo. There are some for
   SDL3 ([ValorZard](https://reservoir.lean-lang.org/@ValorZard/SDL3)) and
   raylib ([Raylib.lean](https://github.com/KislyjKisel/Raylib.lean)), but a
@@ -136,10 +178,12 @@ import only each other. Only `Host` calls C, and only `Host` and
 
 ## Ideas for next
 
-- The desktop's keys (N, U) behind a modifier: apps never hear N or U
-  now, so none could take typing.
+- Undo goes back a press at a time, so it also undoes everything typed
+  since the last press. An app could say which of its events make a step
+  worth returning to (Enter in a REPL, say).
 - Right-click for apps too, perhaps a window menu, now that the right
   button always opens the desktop's menu.
 - Resizing windows: an app's `view` already takes its size.
-- Measure text in the view, for layout that wraps (Notes, a REPL).
+- Measure proportional text in the view, for layout that wraps (Notes).
+  Monospace text can be measured already.
 - Display scaling and a resizable window.

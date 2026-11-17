@@ -42,9 +42,9 @@ def Desktop.view (d : Desktop) : Picture :=
     [.rect 0 (screenH - barH) screenW barH 0 0x16161e,
      .text 14 (screenH - 10) 13 0x7aa2f7
        s!"{d.past.length} earlier worlds   ·   \
-          right-click or N: open an app   ·   drag a title   ·   \
-          click in a window   ·   click the box to close   ·   \
-          U undo   ·   Esc quits"] ++
+          right-click or Ctrl+Shift+N: open an app   ·   drag a title   ·   \
+          click in a window, then type   ·   click the box to close   ·   \
+          Ctrl+Shift+Z undo   ·   Esc quits"] ++
     world.menu.toList.map world.menuView)
 
 end LeanMachine

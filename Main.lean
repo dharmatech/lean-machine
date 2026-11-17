@@ -20,13 +20,13 @@ partial def run (c : Canvas) (d : Desktop) (frames : Option Nat) : IO Unit := do
   -- second, so a clock turns over on time.
   let (_, msLeft) ← localTime
   let mut raw ← Host.event (min 100 (msLeft + 1)).toUInt32
-  while raw.get! 0 != 0 do
+  while raw.nums.get! 0 != 0 do
     match Event.decode raw with
     | some .quit => quit := true
     -- Esc closes the menu if it's open, and quits if it isn't.
-    | some (.key k) =>
-      if k == keyEscape && d.now.menu.isNone then quit := true
-      else d := d.step (.key k)
+    | some (.key .escape m) =>
+      if d.now.menu.isNone then quit := true
+      else d := d.step (.key .escape m)
     | some e => d := d.step e
     | none => pure ()
     raw ← Host.event 0
@@ -41,6 +41,10 @@ partial def run (c : Canvas) (d : Desktop) (frames : Option Nat) : IO Unit := do
 -- boxes, and a picture moved and cut to a box.
 def sampler : Picture :=
   let label (x y : Float) (s : String) : Picture := .text x y 13 0x7aa2f7 s
+  let cells (x y size : Float) (n : Nat) : Picture :=
+    .group ((List.range (n + 1)).map fun i =>
+      let cx := x + monoAdvance size * i.toFloat
+      .line cx y cx (y + 5) 1 0x565f89)
   let box (y : Float) (a : Align) (s : String) : Picture :=
     .group [.rect 40 y 260 40 6 0x414868, .rect 42 (y + 2) 256 36 5 0x1a1b26,
             .textIn 54 y 236 40 16 a 0xc0caf5 s]
@@ -69,7 +73,14 @@ def sampler : Picture :=
         .textIn 0 0 200 120 40 .center 0xc0caf5 "clipped text"])]),
     -- Drawn after the translate and clip: where it is says both were undone.
     label 620 220 "after them, back where it was",
-    .circle 640 250 12 0xbb9af7 ]
+    .circle 640 250 12 0xbb9af7,
+    -- Ticks at the cells' edges: each character, narrow or wide, in its own.
+    label 40 440 "mono: a cell per character, a cursor after column 4",
+    .mono 40 480 15 0xc0caf5 "let x := 42 -- héllo",
+    cells 40 486 15 20,
+    .rect (40 + monoAdvance 15 * 4) (480 - 13) 2 17 0 0xf7768e,
+    .mono 40 540 24 0x9ece6a "iiiii MMMMM 01234",
+    cells 40 548 24 17 ]
 
 -- The pure world, driven by a script of events instead of a person.
 def test (c : Canvas) : IO Unit := do
@@ -83,14 +94,22 @@ def test (c : Canvas) : IO Unit := do
   let script := [.tick ⟨10, 8, 30⟩,                 -- every app hears it
                  grab, .motion 1000 120, .release 1000 120,
                  .menu 600 450, item 600 450 0,     -- right-click, Clock
-                 .motion 100 400, .key keyN,        -- N: the menu here
+                 .motion 100 400,
+                 .key (.char 'n') ctrlShift,        -- the menu here
                  item 100 400 3,                    -- Notes
                  dot,
+                 -- Notes hears typing. A plain or shifted N types; only
+                 -- Ctrl+Shift+N is the desktop's.
+                 .text "héllo, ", .text "wörld ",
+                 .key (.char 'n') {}, .text "n",
+                 .key (.char 'n') { shift := true }, .text "N",
+                 .key .left { ctrl := true, shift := true },
                  .press (80 + 420 - 15) (70 + 14),  -- REPL's close box
                  .tick ⟨10, 8, 31⟩]
   let d := script.foldl Desktop.step start
   IO.println s!"after the script: {d.now.windows.map (·.title)}, \
-    focus {d.now.focus}, {d.past.length} earlier worlds"
+    focus {d.now.focus}, {d.past.length} earlier worlds, \
+    menu open {d.now.menu.isSome}"
   let clockWin := d.now.windows.find? (·.title == "Clock")
   IO.println s!"Clock at {clockWin.map (·.x)} {clockWin.map (·.y)}; \
     in the start world still at {(start.now.windows.find? (·.title == "Clock")).map (·.x)}"
@@ -102,10 +121,23 @@ def test (c : Canvas) : IO Unit := do
   let off := open_.step (.press 20 20)
   IO.println s!"a press off the menu: menu open {off.now.menu.isSome}, \
     {off.now.windows.length} windows, {off.past.length} earlier worlds"
-  let d := (d.step (.key keyU)).step (.key keyU)
+  let undo := Event.key (.char 'z') ctrlShift
+  let d := (d.step undo).step undo
   IO.println s!"after two undos: {d.now.windows.map (·.title)}"
   render c d.view; c.savePng "after-undo.png"
   render c sampler; c.savePng "sampler.png"
+  -- What the decoder makes of events as the shim hands them back.
+  let raw (kind a b : Float) (text := "") : RawEvent := ⟨⟨#[kind, a, b, 0]⟩, text⟩
+  let shown : Option Event → String
+    | some (.key k m) => k.show m
+    | some (.text s) => s!"text {s.quote}"
+    | some _ => "another event"
+    | none => "nothing"
+  let decoded := [raw 5 78 0x41, raw 5 0x40000050 0, raw 5 13 0x200,
+                  raw 6 0x40 0 "n", raw 6 0 0 "é"].map (shown ∘ Event.decode)
+  IO.println s!"decoded: {decoded}"
+  IO.println s!"mono: the font's advance is {← c.monoEm} em, the grid's \
+    {monoAdvance 1} em"
 
 def main (args : List String) : IO Unit := do
   let c ← Canvas.new screenW.toUInt32 screenH.toUInt32

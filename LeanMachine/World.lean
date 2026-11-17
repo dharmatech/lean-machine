@@ -4,8 +4,8 @@ import LeanMachine.App
 
 Pure: `World.step` makes a new world and changes nothing. Each window
 holds an app. The world drags, raises and closes windows, opens apps from
-its menu, passes ticks to every app, and passes other events to the
-focused window's app. -/
+its menu, passes ticks to every app, and passes other events, keys and
+text included, to the focused window's app. -/
 
 namespace LeanMachine
 
@@ -21,12 +21,9 @@ inductive Event where
   | release (x y : Float)
   | motion (x y : Float)
   | menu (x y : Float)        -- the right button: asks for the menu
-  | key (code : UInt32)
+  | key (k : Key) (mods : Mods)
+  | text (s : String)
   | tick (t : TimeOfDay)      -- from the loop, not the host
-
-def keyEscape : UInt32 := 27
-def keyN : UInt32 := 'n'.toNat.toUInt32
-def keyU : UInt32 := 'u'.toNat.toUInt32
 
 structure Win where
   id : Nat
@@ -108,7 +105,8 @@ def Win.hear (w : Win) (e : Event) : Win :=
     | .press x y => some (.press (x - dx) (y - dy))
     | .release x y => some (.release (x - dx) (y - dy))
     | .motion x y => some (.motion (x - dx) (y - dy))
-    | .key k => some (.key k)
+    | .key k m => some (.key k m)
+    | .text s => some (.text s)
     | .tick t => some (.tick t)
     | .menu .. | .quit => none
   match heard.bind w.app.step with
@@ -175,14 +173,16 @@ def World.stepWindows (world : World) : Event → World
     if world.drag.isSome then { world with drag := none }
     else world.toFocus (.release x y)
   | .menu x y => world.openMenu x y
-  | .key k =>
-    if k == keyN then world.openMenu world.mouseX world.mouseY
-    else world.toFocus (.key k)
+  | .key k m =>
+    if desktopKey 'n' k m then world.openMenu world.mouseX world.mouseY
+    else world.toFocus (.key k m)
+  | .text s => world.toFocus (.text s)
   | .tick t => { world.toAll (.tick t) with time := t }
   | .quit => world
 
 -- With the menu open, a press on an item opens its app where the menu
--- was; a press anywhere else only closes the menu, and so does Esc.
+-- was; a press anywhere else only closes the menu, and so does Esc. Other
+-- keys and text still go to the focused app.
 def World.step (world : World) (e : Event) : World :=
   match world.menu, e with
   | some m, .press x y =>
@@ -190,8 +190,7 @@ def World.step (world : World) (e : Event) : World :=
     match (world.itemAt? m x y).bind fun i => world.catalog[i]? with
     | some app => world.launch app m.x m.y
     | none => world
-  | some _, .key k =>
-    if k == keyEscape then { world with menu := none } else world.stepWindows e
+  | some _, .key .escape _ => { world with menu := none }
   | _, _ => world.stepWindows e
 
 -- Whether `e` starts a step undo can return to. A press does, unless it
