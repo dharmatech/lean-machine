@@ -1,0 +1,6 @@
+# build products
+Main.c
+*.o
+/desktop
+# written by ./desktop --test
+*.png
