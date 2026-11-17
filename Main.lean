@@ -104,7 +104,7 @@ def test (c : Canvas) : IO Unit := do
                  .key (.char 'n') {}, .text "n",
                  .key (.char 'n') { shift := true }, .text "N",
                  .key .left { ctrl := true, shift := true },
-                 .press (80 + 420 - 15) (70 + 14),  -- REPL's close box
+                 .press (80 + repl.size.1 + 2 * frame - 15) (70 + 14), -- REPL's close box
                  .tick ⟨10, 8, 31⟩]
   let d := script.foldl Desktop.step start
   IO.println s!"after the script: {d.now.windows.map (·.title)}, \
@@ -138,6 +138,37 @@ def test (c : Canvas) : IO Unit := do
   IO.println s!"decoded: {decoded}"
   IO.println s!"mono: the font's advance is {← c.monoEm} em, the grid's \
     {monoAdvance 1} em"
+  -- The REPL, typed into and edited: first as a pure `Repl`, then on the
+  -- desktop after a press in its body (left of Clock) focuses it.
+  let key (k : Key) : AppEvent := .key k {}
+  let line (s : String) : List AppEvent := [.text s, key .enter]
+  let typing : List AppEvent :=
+    line "1 + 1" ++
+    [.text "helo", key .left, .text "l",                   -- hello
+     key .home, .text "say ", key .«end», .text "!", key .enter,
+     .text "xabc", key .home, key .delete, key .enter,     -- abc
+     key .backspace, key .enter] ++                        -- empty: no echo
+    (List.range 10).flatMap (fun i => line s!"line {i + 1}") ++
+    line (String.join (List.replicate 14 "0123456789")) ++ -- wraps
+    [.text "draft", key .up, key .up, key .down, key .down, -- the draft again
+     key .left, key .left]
+  let r := typing.foldl (fun r e => (r.step e).getD r) ({} : Repl)
+  let entry : Entry → String
+    | .note s => s!"note {s.quote}"
+    | .input s => s!"> {s}"
+    | .output s => s
+  IO.println s!"REPL line {(String.ofList (r.line.before.reverse ++ '|' :: r.line.after)).quote}, \
+    {r.history.length} lines of history, \
+    transcript starts {(r.transcript.reverse.take 7).map entry}"
+  let r := [key .up, key .up, key .up].foldl (fun r e => (r.step e).getD r) r
+  IO.println s!"three Ups: {r.line.text.quote}"
+  let toEvent : AppEvent → Option Event
+    | .text s => some (.text s)
+    | .key k m => some (.key k m)
+    | _ => none
+  let d := (Event.press 120 200 :: typing.filterMap toEvent).foldl Desktop.step start
+  IO.println s!"focused: {(d.now.windows.find? (·.id == d.now.focus)).map (·.title)}"
+  render c d.view; c.savePng "repl.png"
 
 def main (args : List String) : IO Unit := do
   let c ← Canvas.new screenW.toUInt32 screenH.toUInt32

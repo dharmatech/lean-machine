@@ -1,6 +1,7 @@
 import LeanMachine.World
 import LeanMachine.Apps.Placeholder
 import LeanMachine.Apps.Clock
+import LeanMachine.Apps.Repl
 
 /-! # The desktop: the world now, and every world before it
 
@@ -35,7 +36,7 @@ def Desktop.step (d : Desktop) (e : Event) : Desktop :=
 
 -- What the menu opens.
 def catalog : List App :=
-  [clock, placeholder "REPL", placeholder "Inspector", placeholder "Notes"]
+  [clock, repl, placeholder "Inspector", placeholder "Notes"]
 
 -- The desktop the program starts with: four windows, opened as the menu
 -- opens them, each lower and to the right of the last, and no past.
@@ -43,8 +44,7 @@ def start : Desktop :=
   let empty : World :=
     { windows := [], focus := 0, drag := none, menu := none, catalog,
       time := ⟨0, 0, 0⟩, nextId := 1, mouseX := 600, mouseY := 400 }
-  let apps := [placeholder "REPL", clock, placeholder "Inspector",
-               placeholder "Notes"]
+  let apps := [repl, clock, placeholder "Inspector", placeholder "Notes"]
   { past := [],
     now := apps.zipIdx.foldl (init := empty) fun world (app, i) =>
       world.launch app (80 + 140 * i.toFloat) (70 + 90 * i.toFloat) }

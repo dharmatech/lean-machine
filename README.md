@@ -23,9 +23,12 @@ Right-click anywhere, or press Ctrl+Shift+N, for a menu of apps; choose
 one to open it in a new window where the menu was. Esc closes the menu,
 and so does a click off it. Drag a window by its title, click one to
 raise it, click the box on a title to close it, Ctrl+Shift+Z to undo, Esc
-to quit. Clock is a clock; REPL, Inspector and Notes are placeholders for
-now: click in one to drop a dot, or type into it to see the text and the
-last key, with its modifiers, that it heard. The bar at the bottom counts
+to quit. Clock is a clock. The REPL echoes each line you enter, for now:
+click in it and type; Left, Right, Home, End, Backspace and Delete edit
+the line, and Up and Down go back and forth through earlier lines.
+Inspector and Notes are placeholders: click in one to drop a dot, or
+type into it to see the text and the last key, with its modifiers, that
+it heard. The bar at the bottom counts
 the earlier worlds that undo can return to.
 
 ```sh
@@ -34,9 +37,11 @@ the earlier worlds that undo can return to.
 SDL_VIDEO_DRIVER=dummy .lake/build/bin/desktop --frames 20   # the same, with no display
 ```
 
-`--test` writes `after-script.png`, `after-undo.png` and `menu.png` (the
-menu open) in the current directory, and `sampler.png`, one of each kind
-of picture. It also prints what `Event.decode` makes of a few events as
+`--test` writes `after-script.png`, `after-undo.png`, `menu.png` (the
+menu open) and `repl.png` (the REPL after a script of typing, editing
+and history) in the current directory, and `sampler.png`, one of each
+kind of picture. It also prints the REPL's line and history after that
+script, and what `Event.decode` makes of a few events as
 the shim hands them back, and the monospace font's own advance beside
 `monoAdvance`'s.
 
@@ -74,6 +79,15 @@ import only each other. Only `Host` calls C, and only `Host` and
   after Schevana's `apps/clock.ss`. `clockFace` is a pure function of the
   time and the size; the app keeps the last tick's time and changes only
   when the second does.
+- `Apps/Repl.lean`: a line editor over a transcript; for now Enter
+  echoes the line. The line is a pair of lists, the characters before
+  the cursor (nearest first) and those after it, so every edit is a cons
+  or an uncons. Up and Down walk the history and come back to the line
+  being typed. The transcript is a list, newest first, and the view
+  cuts only the newest entries into rows, as many as fill the window;
+  long lines wrap at the window's width in columns. Rows start at the
+  top, and once they overflow the oldest go off the top, so the newest
+  and the line being edited stay in view.
 - `Apps/Placeholder.lean`: stands in for apps not written yet. A click
   drops a dot where it lands; it shows what was typed into it and the
   last key it heard.
@@ -87,7 +101,8 @@ import only each other. Only `Host` calls C, and only `Host` and
   the screen and told the time first. `World.commits` says which events
   start a step undo can return to: a press that does something.
 - `Desktop.lean`: `Desktop` is the world now and every world before it;
-  undo (Ctrl+Shift+Z) takes the previous one, apps' states included. Also `catalog`,
+  undo (Ctrl+Shift+Z) takes the previous one, apps' states included.
+  The start desktop opens the REPL, Clock, Inspector and Notes. Also `catalog`,
   what the menu opens, and `start`, the desktop the program starts with,
   opened with `launch` as the menu would.
 - `View.lean`: `Desktop.view` returns a `Picture`. Each app's view is
@@ -168,6 +183,16 @@ import only each other. Only `Host` calls C, and only `Host` and
   no C is needed. Time comes into the pure world only as a tick event.
   Undo puts back an earlier world, clocks included, but the loop ticks
   before every frame, so a stale time is never drawn.
+- **Lists over arrays in app state.** An app's state lives on in the
+  worlds undo keeps, so an `Array` push there copies the whole array
+  whenever an earlier world still holds it (Lean updates an array in
+  place only when nothing else holds it). The REPL's
+  transcript and history are lists, newest first: adding is a cons that
+  shares the rest with every earlier world.
+- **Commands take words.** Lean's built-in commands reserve their names
+  everywhere: `def recall` doesn't parse, because `recall` is a command
+  (it restates a declaration). A REPL user will hit the same thing;
+  `«recall»` gets around it.
 - **Apps are opaque.** The state inside an app is in closures, so nothing
   outside it, an Inspector included, can look at it. An app could later
   offer a description of itself.
@@ -178,6 +203,9 @@ import only each other. Only `Host` calls C, and only `Host` and
 
 ## Ideas for next
 
+- The REPL: scroll back through the transcript (PageUp, the wheel),
+  place the cursor with a click, Ctrl+A and Ctrl+E, and keep the cursor
+  in view when a line is taller than the window.
 - Undo goes back a press at a time, so it also undoes everything typed
   since the last press. An app could say which of its events make a step
   worth returning to (Enter in a REPL, say).
