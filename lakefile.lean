@@ -39,6 +39,9 @@ lean_lib LeanMachine where
 @[default_target]
 lean_exe desktop where
   root := `Main
+  -- The REPL evaluates Lean in this process: Lean's interpreter is linked
+  -- in, and the symbols it calls are exported.
+  supportInterpreter := true
   moreLinkObjs := #[shim, runs]
   -- Lean links against its own C library. Name each system library by its
   -- full path: an `-L` to their directory pulls in the system's start files

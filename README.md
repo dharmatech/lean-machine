@@ -23,15 +23,24 @@ Right-click anywhere, or press Ctrl+Shift+N, for a menu of apps; choose
 one to open it in a new window where the menu was. Esc closes the menu,
 and so does a click off it. Drag a window by its title, click one to
 raise it, click the box on a title to close it, Ctrl+Shift+Z to undo, Esc
-to quit. Clock is a clock. The REPL runs each line you enter on a thread
-of its own, and shows how the run ended. There's no Lean in it yet:
-`alloc 100`, `poll 1000` and `spin 1000` are busy work, a few seconds
-each, and any other line comes back as it went. Ctrl+C stops a run (or
-clears the line when nothing runs); `spin` doesn't stop, and finishes.
-The desktop goes on drawing and taking events meanwhile, and the line
-can be edited. Click in the REPL and type; Left, Right, Home, End,
-Backspace and Delete edit the line, and Up and Down go back and forth
-through earlier lines.
+to quit. Clock is a clock.
+
+The REPL evaluates Lean in the desktop's own process: Init and the
+desktop's modules, with `LeanMachine` open. A line is Lean commands
+(`def sq (n : Nat) := n * n`, `#eval`, `namespace`, `open`) or a term,
+evaluated as `#eval` would (`sq 12`); what Lean says comes back under
+it, errors in red. Each line runs on a thread of its own, so the desktop
+goes on drawing and taking events, and the line can be edited
+meanwhile; Ctrl+C stops a run (or clears the line when nothing runs).
+Each REPL has its own Lean, kept in its state, so undo takes back
+definitions too. In a REPL, `world` is the desktop as it was when Enter
+was pressed (`(·.windows.map (·.title)) <$> world`), and `launch app`
+opens an app made there in a new window. `Busy.alloc 100`,
+`Busy.polled 1000` and `Busy.spin 1000` are compiled busy work, a few
+seconds each; the first two stop at Ctrl+C, `spin` doesn't and
+finishes. Click in the REPL and type; Left, Right, Home, End, Backspace
+and Delete edit the line, and Up and Down go back and forth through
+earlier lines.
 Inspector and Notes are placeholders: click in one to drop a dot, or
 type into it to see the text and the last key, with its modifiers, that
 it heard. The bar at the bottom counts
@@ -45,30 +54,36 @@ SDL_VIDEO_DRIVER=dummy .lake/build/bin/desktop --frames 20   # the same, with no
 
 `--test` writes `after-script.png`, `after-undo.png`, `menu.png` (the
 menu open) and `repl.png` (the REPL after a script of typing, editing
-and history, its runs done at once on the same thread) in the current
-directory, and `sampler.png`, one of each kind of picture. It also
-prints the REPL's line and history after that script, and what
-`Event.decode` makes of a few events as the shim hands them back, and
-the monospace font's own advance beside `monoAdvance`'s. Then it runs
-busy work on real threads through the desktop's REPL and the loop's
-`feed`: `repl-running.png` is the REPL with a run going,
-`repl-runs.png` after each kind of busy work was stopped by Ctrl+C,
-and `repl-undo.png` after an undo brought back a REPL waiting for a run
-that was gone. It prints how each run ended, how long a stop took, a
+and history) in the current directory, and `sampler.png`, one of each
+kind of picture. It also prints the REPL's line, history and first
+entries after that script, and what `Event.decode` makes of a few
+events as the shim hands them back, and the monospace font's own
+advance beside `monoAdvance`'s. Then it evaluates Lean on real threads
+through the desktop's REPL and the loop's `feed`, and prints what came
+back from each line: definitions, a type error, a namespace across
+lines, `world`, printed output. Busy work and loops defined in the REPL
+are stopped by Ctrl+C after 300 ms (`repl-running.png` is the REPL with
+one going, `repl-runs.png` after them all); an app made in the REPL is
+launched and clicked (`repl-launch.png`); an undo takes a definition
+back (`repl-undo.png`); two REPLs evaluate at once. It also prints a
 frame's time with a run going, what closing the REPL did to its run,
 and the RSS after 50 runs were stopped.
 
 Needs Lean 4.36 through elan (`lean-toolchain` pins it), Cairo, SDL3's
 shared library, and a C++ compiler (`c++`). SDL3's headers
-(`libsdl3-dev`) are not needed.
+(`libsdl3-dev`) are not needed. The desktop reads the .olean files of
+the Lean it was built with when it runs, so that toolchain must stay
+installed.
 
 ## How it's built
 
 The Lean code is one module per file in `LeanMachine/`, in the
 `LeanMachine` namespace, with a thin `Main.lean` on top. `Picture`, `Key`,
 `App`, `Busy`, the apps in `Apps/`, `World`, `Desktop` and `View` are pure
-and import only each other. Only `Host` and `Runs` call C (and `Busy`'s
-`poll`, a pure C function), and only they and `Main.lean` touch `IO`.
+and import only each other. `Ambient` is what code in a run can reach,
+for the REPL's Lean. Only `Host`, `Runs` and `Ambient` call C (and
+`Busy`'s `poll`, a pure C function), only `Eval` imports Lean, and only
+they and `Main.lean` touch `IO`.
 
 - `Picture.lean`: `Picture`, plain data: rectangles, circles, rings,
   lines, text at a point or aligned in a box, monospace text, a picture
@@ -86,9 +101,12 @@ and import only each other. Only `Host` and `Runs` call C (and `Busy`'s
   size, a `step` that returns the app an event makes and the requests
   it makes then (`none`: no change, nothing asked), and the `size` a new
   window gives it. A `Request` asks the loop to `run` work, a pure
-  function `Unit → String`, under a tag the app chooses, or to `stop`
-  the run with a tag; the `Outcome` (a value, stopped, failed) comes
-  back as an event with the tag and the milliseconds the run took.
+  function `Unit → String`, or to `eval` a line of Lean in an `Env`,
+  under a tag the app chooses, or to `stop` the run with a tag; the
+  `Outcome` (a value; what Lean said, as `Said` messages, and the `Env`
+  after the line; stopped; failed) comes back as an event with the tag
+  and the milliseconds the run took. `Env`, a REPL's Lean, is opaque
+  here, so the pure modules don't import Lean.
   `App.asking` makes an app from a state of any type, a step and a view,
   and hides the state's type, so the desktop holds apps of every kind
   in one list; `App.of` makes one that never asks. `AppEvent` is an
@@ -98,15 +116,21 @@ and import only each other. Only `Host` and `Runs` call C (and `Busy`'s
   in where a stop can reach them: `alloc` allocates in every step,
   `polled` calls `poll` in every step, `spin` does neither. `poll x` is
   `x`, a safepoint in C.
+- `Ambient.lean`: what code in a run can reach without being handed it:
+  `world`, the world when the run was asked for, and `launch app`, which
+  opens an app when the run ends. The run's guard keeps them for its
+  thread. The REPL's Lean imports this module.
 - `Apps/Clock.lean`: an analog face with the time in digits under it,
   after Schevana's `apps/clock.ss`. `clockFace` is a pure function of the
   time and the size; the app keeps the last tick's time and changes only
   when the second does.
 - `Apps/Repl.lean`: a line editor over a transcript. Enter asks for the
-  line to be run (busy work by name, or the line itself, for now) and
-  waits for one run at a time; a row under the transcript says it's
-  running, and Ctrl+C asks for a stop. The outcome, and how long the run
-  took, go in the transcript. The line is a pair of lists, the
+  line to be evaluated in the REPL's `Env` (none at first: the
+  desktop's own) and waits for one run at a time; a row under the
+  transcript says it's running, and Ctrl+C asks for a stop. What Lean
+  said goes in the transcript, output in green, warnings in amber,
+  errors in red, with how long the run took, and the `Env` after the
+  line becomes the REPL's. The line is a pair of lists, the
   characters before the cursor (nearest first) and those after it, so
   every edit is a cons or an uncons. Up and Down walk the history and
   come back to the line being typed. The transcript is a list, newest first, and the view
@@ -122,7 +146,8 @@ and import only each other. Only `Host` and `Runs` call C (and `Busy`'s
   focuses and closes windows, passes ticks to every app, and passes other
   events, keys and text included, to the focused window's app, moved
   into the app's coordinates; a run's outcome (`Event.done`) goes to the
-  window that asked for it. What apps ask for waits in the world's
+  window that asked for it, and an app a run launched (`Event.launch`)
+  opens by that window. What apps ask for waits in the world's
   `outbox`, marked with the window, until the loop takes it
   (`takeAsked`). Ctrl+Shift+N opens the menu at the pointer.
   The world holds a `catalog` of apps, the menu's items, but knows none
@@ -145,14 +170,23 @@ and import only each other. Only `Host` and `Runs` call C (and `Busy`'s
   loop's wait, `localTime` (through Lean's `Std.Time`), and `render`,
   the only code that draws.
 - `Runs.lean`: the loop's side of requests. `Runs` is the runs going on:
-  each a window and tag, a stop flag, and a Lean task with a dedicated
-  thread that computes the work inside `guarded` (runs.cpp) and calls
-  `Host.wake` when it ends. `handle` starts and stops runs (a new run
-  with a tag still going replaces it; a stop with nothing to stop is
-  answered at once), `collect` turns runs that ended into `Event.done`,
-  and `keepFor` stops the runs of windows that are gone.
+  each a window and tag, a stop flag, a Lean task with a dedicated
+  thread that does the work inside a guard (runs.cpp) and calls
+  `Services.wake` when it ends, and the apps it launched. `handle`
+  starts and stops runs (a new run with a tag still going replaces it;
+  a stop with nothing to stop is answered at once), evaluating through
+  `Services.eval`, so this module needn't import Lean; `collect` turns
+  runs that ended into `Event.done` and `Event.launch`, and `keepFor`
+  stops the runs of windows that are gone.
+- `Eval.lean`: Lean in the desktop. `startBase` imports the REPLs' Lean
+  (`Init`, `LeanMachine.View`, `LeanMachine.Ambient`) on a thread of its
+  own as the desktop starts, and opens `LeanMachine`. `eval` takes a
+  line, wraps it in `#eval` if it parses as a term, and elaborates it on
+  the calling thread with `runCommands`, its own loop over Lean's
+  parser and `elabCommandTopLevel`. An `Env` is Lean's `Command.State`:
+  the environment and the scopes left open.
 - `Main.lean`: `run`, the loop. `feed` steps the desktop through events
-  and hands what its apps ask to `Runs`. Each pass waits for events, but
+  and hands what its apps ask to `Runs`, with the world they asked in. Each pass waits for events, but
   not past 100 ms or the next second (a run that ends wakes it), applies
   them, then the outcomes of runs that ended, stops the runs of windows
   that are gone, ticks with the time, and draws. Also `test` and
@@ -160,14 +194,18 @@ and import only each other. Only `Host` and `Runs` call C (and `Busy`'s
 - `shim.c`: Cairo draws into an image in memory, and SDL3 shows it in
   one window and hands back events, text input included, and a wake
   (an SDL user event). No GPU in the design.
-- `runs.cpp`: stopping a run. A run's thread is inside `sv_guarded`
-  while it computes; safepoints check its stop flag (a thread-local
-  pointer to it) and throw a C++ exception that `sv_guarded` catches.
-  The safepoints are `poll` and every small allocation: the linker
-  sends Lean's `lean_alloc_small_object_core` through a wrapper here.
+- `runs.cpp`: stopping a run. A run's thread is inside a guard
+  (`sv_guarded` for a pure function, `sv_guarded_io` for an IO action)
+  while it works; safepoints check its stop flag (a thread-local
+  pointer to it) and throw a C++ exception that the guard catches. The
+  safepoints are `poll` and every small allocation: the linker sends
+  Lean's `lean_alloc_small_object_core` through a wrapper here. The
+  guard also keeps the run's ambient in a thread-local, for
+  `sv_ambient`.
 - `lakefile.lean` builds the `LeanMachine` library and `Main.lean`,
   compiles `shim.c` with `cc` and `runs.cpp` with `c++`, and links them
-  into `desktop`, with `-Wl,--wrap=lean_alloc_small_object_core`.
+  into `desktop` with Lean's interpreter (`supportInterpreter`) and
+  `-Wl,--wrap=lean_alloc_small_object_core`.
 
 ## Findings so far
 
@@ -247,24 +285,23 @@ and import only each other. Only `Host` and `Runs` call C (and `Busy`'s
   values, and choosing one puts that value in a new window. There is no
   class to instantiate: every Clock starts as the same value and goes
   its own way as it hears ticks.
-
 - **Work as a pure function.** A run is a `Unit → String` an app
   builds in its step; the loop calls it on another thread. Lean makes
   that safe without asking anything of the app: a closure handed to a
   task is marked multi-threaded (`lean_mark_mt`), with everything it
   reaches, and from then on its reference counts change atomically. So
   a closure that captures something big pays to mark all of it, and the
-  world's objects it shares stay atomic for good. Because the work is
-  pure, `--test` can also run it at once on the same thread
-  (`hearNow`, `stepNow`) and get the same transcript.
+  world's objects it shares stay atomic for good. Because an app only
+  asks, `--test` can also answer a REPL at once on its own thread
+  (`hearNow`), with no runs at all.
 - **Requests in the world.** Apps don't do I/O; they ask, and the world
   keeps what they asked in an outbox, marked with the window, until the
   loop takes it after each event. The outcome comes back as one more
   event, to the window that asked. Results can't carry an `App`: an
   `AppEvent` holding an `App` would put `App` to the left of an arrow in
   its own definition (`step : AppEvent → …`), which Lean rejects as not
-  strictly positive. Opening an app a REPL made will have to go through
-  the world instead.
+  strictly positive. An app a REPL made goes to the world instead, as
+  `Event.launch`.
 - **Threads.** `IO.asTask (prio := .dedicated)` gives each run a thread
   of its own, outside Lean's pool of workers: from asking to the end of
   a run that does nothing takes about 150 µs. The loop waits on SDL's
@@ -296,7 +333,8 @@ and import only each other. Only `Host` and `Runs` call C (and `Busy`'s
   dedicated threads: quitting with a `spin` going exits at once. The
   loop raises every run's flag first anyway.
 - **Undo and work in flight.** The world is a value, but a run going on
-  is an effect, and undo can't take it back. Undo to a world from before
+  is an effect, and undo can't take it back (what a REPL defined, it
+  can: see below). Undo to a world from before
   Enter leaves a run whose outcome the REPL won't wait for (it ignores
   outcomes with other tags, and a new run with the same tag replaces
   the old). Undo to a world that waited for a run whose outcome came
@@ -304,6 +342,52 @@ and import only each other. Only `Host` and `Runs` call C (and `Busy`'s
   as a stop with nothing to stop is answered at once. Closing a window,
   or undoing to before it opened, stops its runs: the loop compares its
   runs with the windows after each pass.
+- **Linking Lean.** With Lean's interpreter linked in, the executable
+  goes from 6 MB to 239 MB, and a clean build takes 6.5 s. A headless
+  run of one frame still takes 0.23 s; importing the REPLs' Lean (Init
+  and the desktop's modules) takes 125 ms, on a thread of its own, and
+  RSS goes to 485 MB. Importing all of `Lean` would take 1.6 GB, so the
+  REPL's Lean doesn't, and neither may any module it imports: that's
+  why `Env` is opaque in `App.lean` and cast (`unsafeCast`) to Lean's
+  `Command.State` only in `Eval.lean`. The .olean files of the Lean the
+  desktop was built with are read at run time, so `Eval.lean` notes that
+  Lean's place as it compiles (`getBuildDir` in a term elaborator) and
+  passes it to `initSearchPath`; the desktop's own .olean files are
+  found next to the executable.
+- **Elaborating on the run's thread.** `Lean.Elab.process` elaborates
+  each command in a task on Lean's pool of threads (the language
+  server's incremental processor), where the run's stop flag and
+  ambient aren't. The older `Frontend.processCommands` stays on the
+  calling thread but loses every message: `elabCommandTopLevel` clears
+  the log as each command starts, the end of input included. So
+  `Eval.lean` runs its own loop of `Parser.parseCommand` and
+  `elabCommandTopLevel`, taking each command's messages, with
+  `Elab.async` off. `#eval` gathers what the code printed itself
+  (`withIsolatedStreams`, by thread). A line that parses as a term is
+  wrapped in `#eval`. Simple lines take 1 to 12 ms.
+- **A REPL's Lean is a value.** Lean's `Command.State`, the environment
+  and the open scopes, is persistent data, so the REPL keeps it in its
+  state: a `namespace` or `open` lasts across lines, each REPL has its
+  own definitions, two REPLs evaluate at once without touching each
+  other, and undo takes a definition back with the rest of the world.
+  A stopped line leaves the REPL's Lean as it was.
+- **Dynamic scope by hand.** Lean has no thread-local or dynamically
+  scoped values (Scheme's `parameterize`), so `world` and `launch` reach
+  their run through a C++ thread-local the guard sets. Code that starts
+  tasks of its own leaves the ambient, and the stop flag, behind.
+- **Stopping evaluation.** Compiled code called from the REPL stops as
+  it did before: `Busy.alloc` and `Busy.polled` within a millisecond.
+  So does a loop defined in the REPL that allocates, which the
+  interpreter runs; one that only does arithmetic on small `Nat`s
+  (about 250 ns a step interpreted, 60 times compiled code) can't be
+  stopped, like `Busy.spin`. A stop that came while such a loop ran
+  takes effect at the first allocation after it, so the run reports
+  that it stopped after the loop's whole time. RSS grew 1 to 2 MB over
+  50 stopped evaluations.
+- **Apps made in the REPL.** `launch` puts an app made by interpreted
+  code in a window, and its step and view run in the interpreter on the
+  main thread, between frames. A step that never returns would hang the
+  desktop: nothing guards the main thread yet.
 
 ## Ideas for next
 
@@ -312,6 +396,10 @@ and import only each other. Only `Host` and `Runs` call C (and `Busy`'s
   match the world now, so undo would stop or restart work along with
   the rest. Pure work can be run again safely; evaluation that changes
   the environment can't.
+- Guard the steps and views of apps made in the REPL, on the main
+  thread: a watchdog could raise their flag after a few frames' time.
+- Definitions shared between REPLs, or a REPL opened from another's Lean.
+- Errors pointed at with a caret under the line, not a column number.
 - The REPL: scroll back through the transcript (PageUp, the wheel),
   place the cursor with a click, Ctrl+A and Ctrl+E, and keep the cursor
   in view when a line is taller than the window.

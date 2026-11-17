@@ -1,10 +1,12 @@
 import LeanMachine.Host
 import LeanMachine.Runs
+import LeanMachine.Eval
 import LeanMachine.View
 
 -- A desktop as a value. `World.step` and `Desktop.view` are pure (in
 -- LeanMachine/); the loop here does the I/O, with `Runs`
--- (LeanMachine/Runs.lean) doing what apps ask, and `render`
+-- (LeanMachine/Runs.lean) doing what apps ask and `eval`
+-- (LeanMachine/Eval.lean) evaluating Lean, and `render`
 -- (LeanMachine/Host.lean) is the only code that draws.
 
 open LeanMachine
@@ -12,9 +14,9 @@ open LeanMachine
 /-! ## The loop: the I/O -/
 
 -- Steps the desktop through `es`, and does what its apps ask as they ask
--- it. A request answered at once (a stop with no run to stop) is stepped
--- through after the rest. `wake` is what a run calls when it ends.
-partial def feed (wake : IO Unit) (d : Desktop) (runs : Runs) :
+-- it, with what the loop lends runs. A request answered at once (a stop
+-- with no run to stop) is stepped through after the rest.
+partial def feed (svc : Services) (d : Desktop) (runs : Runs) :
     List Event → IO (Desktop × Runs)
   | [] => return (d, runs)
   | e :: rest => do
@@ -22,16 +24,16 @@ partial def feed (wake : IO Unit) (d : Desktop) (runs : Runs) :
     let mut runs := runs
     let mut answers := []
     for a in asked do
-      let (rs, more) ← runs.handle wake a
+      let (rs, more) ← runs.handle svc d.now a
       runs := rs
       answers := answers ++ more
-    feed wake d runs (rest ++ answers)
+    feed svc d runs (rest ++ answers)
 
 -- Applies every waiting event, the outcomes of runs that ended, and a
 -- tick with the time, then draws once. `frames` stops it early (for
 -- tests); the window's close button or Esc stops it any time.
-partial def run (c : Canvas) (d : Desktop) (runs : Runs) (frames : Option Nat) :
-    IO Unit := do
+partial def run (c : Canvas) (svc : Services) (d : Desktop) (runs : Runs)
+    (frames : Option Nat) : IO Unit := do
   if frames == some 0 then runs.stopAll; return
   let mut d := d
   let mut runs := runs
@@ -46,21 +48,21 @@ partial def run (c : Canvas) (d : Desktop) (runs : Runs) (frames : Option Nat) :
     -- Esc closes the menu if it's open, and quits if it isn't.
     | some (.key .escape m) =>
       if d.now.menu.isNone then quit := true
-      else (d, runs) ← feed Host.wake d runs [.key .escape m]
-    | some e => (d, runs) ← feed Host.wake d runs [e]
+      else (d, runs) ← feed svc d runs [.key .escape m]
+    | some e => (d, runs) ← feed svc d runs [e]
     | none => pure ()
     raw ← Host.event 0
   if quit then runs.stopAll; return
   -- Runs that ended tell their windows how. Runs whose window is gone
   -- are stopped.
   let (rs, ended) ← runs.collect
-  (d, runs) ← feed Host.wake d rs ended
+  (d, runs) ← feed svc d rs ended
   runs ← runs.keepFor (d.now.windows.map (·.id))
   let (t, _) ← localTime
-  (d, runs) ← feed Host.wake d runs [.tick t]
+  (d, runs) ← feed svc d runs [.tick t]
   render c d.view
   Host.present c
-  run c d runs (frames.map (· - 1))
+  run c svc d runs (frames.map (· - 1))
 
 -- One of each kind of picture, for `--test`: lines, circles, text placed in
 -- boxes, and a picture moved and cut to a box.
@@ -107,27 +109,39 @@ def sampler : Picture :=
     .mono 40 540 24 0x9ece6a "iiiii MMMMM 01234",
     cells 40 548 24 17 ]
 
--- The REPL after `e`, with any run it asks for done at once, here: the
--- work is a pure function, so a test needs no thread.
-def hearNow (r : Repl) (e : AppEvent) : Repl :=
-  match r.step e with
-  | none => r
-  | some (r, asks) => asks.foldl (init := r) fun r a =>
-    let answer : AppEvent := match a with
-      | .run tag work => .done tag (.value (work ())) 0
-      | .stop tag => .done tag .stopped 0
-    ((r.step answer).map (·.1)).getD r
+-- Waits for every run to end, up to `ms`, and tells the desktop how each
+-- did; also returns the outcomes, oldest first.
+partial def settle (svc : Services) (d : Desktop) (runs : Runs) (ms : Nat := 30000)
+    (seen : List Event := []) : IO (Desktop × Runs × List Event) := do
+  let (runs, ended) ← runs.collect
+  let (d, runs) ← feed svc d runs ended
+  let seen := seen ++ ended
+  if runs.live.isEmpty || ms == 0 then return (d, runs, seen)
+  IO.sleep 1
+  settle svc d runs (ms - 1) seen
 
--- The desktop after `e`, with every run its apps ask for done at once,
--- here, the same way.
-partial def stepNow (d : Desktop) (e : Event) : Desktop :=
-  let (d, asked) := (d.step e).takeAsked
-  asked.foldl (init := d) fun d a => stepNow d <| match a.request with
-    | .run tag work => .done a.win tag (.value (work ())) 0
-    | .stop tag => .done a.win tag .stopped 0
+-- The REPL after `e`, with what it asks for worked out at once, on this
+-- thread, outside any run.
+def hearNow (svc : Services) (r : Repl) (e : AppEvent) : IO Repl := do
+  match r.step e with
+  | none => return r
+  | some (r, asks) => asks.foldlM (init := r) fun r a => do
+    let answer : AppEvent ← match a with
+      | .run tag work => pure (.done tag (.value (work ())) 0)
+      | .eval tag src env => do
+        let (said, env) ← svc.eval src env
+        pure (.done tag (.evaluated said env) 0)
+      | .stop tag => pure (.done tag .stopped 0)
+    return ((r.step answer).map (·.1)).getD r
+
+-- The desktop after `e`, with the runs its apps ask for ended.
+def stepNow (svc : Services) (d : Desktop) (e : Event) : IO Desktop := do
+  let (d, runs) ← feed svc d {} [e]
+  let (d, _, _) ← settle svc d runs
+  return d
 
 -- The pure world, driven by a script of events instead of a person.
-def test (c : Canvas) : IO Unit := do
+def test (c : Canvas) (svc : Services) : IO Unit := do
   let grab := Event.press 300 (160 + 10)          -- Clock's title
   -- A press on the middle of item `i` of a menu at (x, y).
   let item (x y : Float) (i : Nat) : Event :=
@@ -182,49 +196,60 @@ def test (c : Canvas) : IO Unit := do
   IO.println s!"decoded: {decoded}"
   IO.println s!"mono: the font's advance is {← c.monoEm} em, the grid's \
     {monoAdvance 1} em"
-  -- The REPL, typed into and edited: first as a pure `Repl`, then on the
-  -- desktop after a press in its body (left of Clock) focuses it.
+  -- The REPL, typed into and edited: first a `Repl` alone, its lines
+  -- evaluated at once, then on the desktop after a press in its body
+  -- (left of Clock) focuses it.
   let key (k : Key) : AppEvent := .key k {}
   let line (s : String) : List AppEvent := [.text s, key .enter]
   let typing : List AppEvent :=
     line "1 + 1" ++
-    [.text "helo", key .left, .text "l",                   -- hello
-     key .home, .text "say ", key .«end», .text "!", key .enter,
-     .text "xabc", key .home, key .delete, key .enter,     -- abc
-     key .backspace, key .enter] ++                        -- empty: no echo
-    (List.range 10).flatMap (fun i => line s!"line {i + 1}") ++
-    line (String.join (List.replicate 14 "0123456789")) ++ -- wraps
+    [.text "\"helo\"", key .left, key .left, .text "l",  -- "hello"
+     key .home, .text "String.length ", key .enter,
+     .text "xabc", key .home, key .delete, key .enter,     -- abc: unknown
+     key .backspace, key .enter] ++                        -- empty: asks nothing
+    (List.range 10).flatMap (fun i => line s!"{i + 1} * {i + 1}") ++
+    line (String.join (List.replicate 14 "1234567890")) ++ -- wraps
     [.text "draft", key .up, key .up, key .down, key .down, -- the draft again
      key .left, key .left]
-  let r := typing.foldl hearNow ({} : Repl)
+  let r ← typing.foldlM (hearNow svc) ({} : Repl)
   let entry : Entry → String
     | .note s => s!"note {s.quote}"
     | .input s => s!"> {s}"
     | .output s => s
+    | .warning s => s!"warning {s.quote}"
+    | .error s => s!"error {s.quote}"
   IO.println s!"REPL line {(String.ofList (r.line.before.reverse ++ '|' :: r.line.after)).quote}, \
     {r.history.length} lines of history, \
     transcript starts {(r.transcript.reverse.take 7).map entry}"
-  let r := [key .up, key .up, key .up].foldl hearNow r
+  let r ← [key .up, key .up, key .up].foldlM (hearNow svc) r
   IO.println s!"three Ups: {r.line.text.quote}"
   let toEvent : AppEvent → Option Event
     | .text s => some (.text s)
     | .key k m => some (.key k m)
     | _ => none
-  let d := (Event.press 120 200 :: typing.filterMap toEvent).foldl stepNow start
+  let d ← (Event.press 120 200 :: typing.filterMap toEvent).foldlM (stepNow svc) start
   IO.println s!"focused: {(d.now.windows.find? (·.id == d.now.focus)).map (·.title)}"
   render c d.view; c.savePng "repl.png"
 
 def LeanMachine.Request.show : Request → String
   | .run tag _ => s!"run {tag}"
+  | .eval tag src _ => s!"eval {tag} {src.quote}"
   | .stop tag => s!"stop {tag}"
+
+def LeanMachine.Said.show : Said → String
+  | .info s => s
+  | .warning s => s!"warning: {s}"
+  | .error s => s!"error: {s}"
 
 def LeanMachine.Event.showDone : Event → String
   | .done win tag o ms =>
     let how := match o with
       | .value s => s!"value {s}"
+      | .evaluated said _ => s!"said {said.map Said.show}"
       | .stopped => "stopped"
       | .failed why => s!"failed: {why}"
     s!"window {win} run {tag}: {how}, {ms} ms"
+  | .launch win app => s!"window {win} opened {app.title}"
   | _ => "another event"
 
 def rssMB : IO Nat := do
@@ -233,45 +258,46 @@ def rssMB : IO Nat := do
   let kb := ((line.drop 6).trimAscii.toString.takeWhile Char.isDigit).toNat!
   return kb / 1024
 
--- Waits for every run to end, up to `ms`, and tells the desktop how each
--- did; also returns the outcomes, oldest first.
-partial def settle (d : Desktop) (runs : Runs) (ms : Nat := 20000)
-    (seen : List Event := []) : IO (Desktop × Runs × List Event) := do
-  let (runs, ended) ← runs.collect
-  let (d, runs) ← feed (pure ()) d runs ended
-  let seen := seen ++ ended
-  if runs.live.isEmpty || ms == 0 then return (d, runs, seen)
-  IO.sleep 1
-  settle d runs (ms - 1) seen
-
--- Runs on real threads, driven by a script: the desktop's REPL asks for
--- busy work, Ctrl+C stops it, and the outcomes come back to it.
-def testRuns (c : Canvas) : IO Unit := do
-  let feed := feed (pure ())
+-- Runs on real threads, driven by a script: the desktop's REPL evaluates
+-- Lean, Ctrl+C stops it, and the outcomes come back to it.
+def testRuns (c : Canvas) (svc : Services) : IO Unit := do
+  let feed := feed svc
+  let settle := settle svc
   let ctrlC := Event.key (.char 'c') { ctrl := true }
   let enter (s : String) : List Event := [.text s, .key .enter {}]
   let ms (t0 : Nat) : IO Nat := return ((← IO.monoNanosNow) - t0) / 1000000
-  let rss0 ← rssMB
+  -- Enters each line and waits for it, and says what came back.
+  let lines (d : Desktop) (runs : Runs) (ls : List String) :
+      IO (Desktop × Runs) := ls.foldlM (init := (d, runs)) fun (d, runs) l => do
+    let t0 ← IO.monoNanosNow
+    let (d, runs) ← feed d runs (enter l)
+    let (d, runs, seen) ← settle d runs
+    IO.println s!"  {l} → {seen.map (·.showDone)} ({← ms t0} ms)"
+    return (d, runs)
   -- A press in the REPL's body focuses it.
   let (d, runs) ← feed start {} [.press 120 200]
   -- What the REPL asks for, as the world hands it to the loop.
-  let (_, asked) := ((enter "alloc 5").foldl Desktop.step d).takeAsked
+  let (_, asked) := ((enter "1 + 1").foldl Desktop.step d).takeAsked
   IO.println s!"Enter asks for: {asked.map fun a => s!"{a.request.show} from window {a.win}"}"
-  -- An empty line asks for nothing. A run that does nothing: from asking
-  -- to its end, a thread started and gone.
-  let (d, runs) ← feed d runs (enter "")
-  let t0 ← IO.monoNanosNow
-  let (d, runs) ← feed d runs (enter "ok")
-  for l in runs.live do let _ ← IO.wait l.task
-  IO.println s!"a run that does nothing, there and back: {((← IO.monoNanosNow) - t0) / 1000} µs"
-  let (d, runs, _) ← settle d runs
-  -- Each kind of busy work, stopped by Ctrl+C after 300 ms.
+  IO.println "lines, each waited for:"
+  let (d, runs) ← lines d runs
+    ["1 + 1", "def sq (n : Nat) := n * n", "sq 12", "sq \"x\"",
+     "namespace Shapes", "def dot := Picture.circle 0 0 4 0xffffff", "end Shapes",
+     "Shapes.dot matches .circle ..",
+     "(·.windows.map (·.title)) <$> world", "IO.println \"printed\"",
+     "#eval [1, 2, 3].map sq"]
+  -- Stopped by Ctrl+C after 300 ms: compiled busy work, and loops
+  -- defined here, which the interpreter runs.
+  let (d, runs) ← lines d runs
+    ["def churn : Nat → Nat → Nat | 0, a => a | n + 1, a => churn n ((List.replicate 3 n).length + a)",
+     "def quiet : Nat → Nat → Nat | 0, a => a | n + 1, a => quiet n ((a + n) % 7)"]
   let mut d := d
   let mut runs := runs
-  for line in ["alloc 2000", "poll 50000", "spin 400"] do
+  for line in ["Busy.alloc 2000", "Busy.polled 50000", "Busy.spin 400",
+               "churn 100000000 0", "quiet 4000000 0"] do
     (d, runs) ← feed d runs (enter line)
     IO.sleep 300
-    if line == "alloc 2000" then
+    if line == "Busy.alloc 2000" then
       render c d.view; c.savePng "repl-running.png"
     let t0 ← IO.monoNanosNow
     (d, runs) ← feed d runs [ctrlC]
@@ -279,36 +305,64 @@ def testRuns (c : Canvas) : IO Unit := do
     d := d'; runs := runs'
     IO.println s!"{line}, Ctrl+C at 300 ms: {seen.map (·.showDone)}, \
       {← ms t0} ms after Ctrl+C"
-  -- Work that ends by itself, then Ctrl+C with nothing running: it
-  -- clears the line.
-  (d, runs) ← feed d runs (enter "alloc 20")
-  let (d', runs', seen) ← settle d runs
-  d := d'; runs := runs'
-  IO.println s!"alloc 20: {seen.map (·.showDone)}"
-  (d, runs) ← feed d runs ([.text "never entered"] ++ [ctrlC])
   render c d.view; c.savePng "repl-runs.png"
+  -- An app made here opens in a window by the REPL, and runs there: a
+  -- press drops a dot.
+  (d, runs) ← lines d runs
+    ["launch (App.of \"Dots\" ([] : List (Float × Float)) \
+       (fun s e => match e with | .press x y => some ((x, y) :: s) | _ => none) \
+       fun s _ _ => .group (s.map fun (x, y) => .circle x y 6 0xe0af68))"]
+  (d, runs) ← feed d runs [.press (123 + 60) (138 + 50), .press (123 + 120) (138 + 90)]
+  IO.println s!"windows: {d.now.windows.map (·.title)}, focus on \
+    {(d.now.windows.find? (·.id == d.now.focus)).map (·.title)}"
+  render c d.view; c.savePng "repl-launch.png"
+  -- Undo takes a definition back: the REPL's Lean is in its state. Dots
+  -- covers the REPL's left side now; a press on its right focuses it.
+  let toRepl := Event.press 600 250
+  (d, runs) ← feed d runs [toRepl]
+  (d, runs) ← lines d runs ["def answer := 42"]
+  (d, runs) ← feed d runs [toRepl]   -- a press: undo returns here
+  (d, runs) ← lines d runs ["def more := answer + 1", "more"]
+  (d, runs) ← feed d runs [.key (.char 'z') ctrlShift]
+  IO.println "after undo:"
+  (d, runs) ← lines d runs ["more", "answer"]
+  render c d.view; c.savePng "repl-undo.png"
   -- Undo brings back a REPL waiting for a run whose outcome came to a
   -- world that's gone. Ctrl+C is answered at once.
-  (d, runs) ← feed d runs (enter "alloc 1")
-  (d, runs) ← feed d runs [.press 120 200]   -- a press: undo returns here
+  (d, runs) ← feed d runs (enter "Busy.alloc 1")
+  (d, runs) ← feed d runs [toRepl]
   let (d', runs', _) ← settle d runs
   (d, runs) ← feed d' runs' [.key (.char 'z') ctrlShift]
   let (d', asked) := (d.step ctrlC).takeAsked
   let mut answers := []
   for a in asked do
-    let (rs, more) ← runs.handle (pure ()) a
+    let (rs, more) ← runs.handle svc d'.now a
     runs := rs; answers := answers ++ more
   IO.println s!"after undo, Ctrl+C asks {asked.map (·.request.show)} with \
     {runs.live.length} runs going; answered at once: {answers.map (·.showDone)}"
   (d, runs) ← feed d' runs answers
-  render c d.view; c.savePng "repl-undo.png"
+  -- A run of a pure function, which no app asks for yet: its outcome goes
+  -- to window 1, whose REPL isn't waiting for it.
+  let (rs, _) ← runs.handle svc d.now ⟨1, .run 99 fun _ => toString (Busy.alloc 1)⟩
+  let (d', runs', seen) ← settle d rs
+  d := d'; runs := runs'
+  IO.println s!"a pure run: {seen.map (·.showDone)}"
+  -- Two REPLs evaluating at once: a second from the menu, then the first.
+  let menuItem (i : Nat) : Event := .press (600 + 20) (Menu.itemY ⟨600, 450⟩ i + itemH / 2)
+  (d, runs) ← feed d runs ([.menu 600 450, menuItem 1] ++ enter "Busy.alloc 30" ++
+                           [toRepl] ++ enter "Busy.alloc 30")
+  let t0 ← IO.monoNanosNow
+  let (d', runs', seen) ← settle d runs
+  d := d'; runs := runs'
+  IO.println s!"two REPLs at once: {seen.map (·.showDone)} in {← ms t0} ms"
   -- A frame, drawn while a run allocates as fast as it can, and without.
   let frameUs (d : Desktop) : IO Nat := do
     let t0 ← IO.monoNanosNow
     for _ in [0:20] do render c d.view
     return ((← IO.monoNanosNow) - t0) / 20000
   let quiet ← frameUs d
-  (d, runs) ← feed d runs (enter "alloc 5000")
+  (d, runs) ← feed d runs (enter "Busy.alloc 5000")
+  IO.sleep 50
   let busy ← frameUs d
   IO.println s!"a frame: {quiet} µs, {busy} µs with a run going"
   -- Closing the window stops its run: the loop sees its window is gone.
@@ -320,29 +374,37 @@ def testRuns (c : Canvas) : IO Unit := do
     let r ← IO.wait task
     let how := match r with
       | .ok (none, _) => "stopped"
-      | .ok (some s, _) => s!"finished with {s}"
+      | .ok (some _, _) => "finished"
       | .error e => toString e
     IO.println s!"closing the REPL: its run {how} {← ms t0} ms later, \
       {runs.live.length} runs going"
-  -- What stops leak: 50 runs stopped as they allocate.
+  -- What stops leak: 50 evaluations stopped as they allocate.
   let rss1 ← rssMB
   (d, runs) ← feed start runs [.press 120 200]
   for _ in [0:50] do
-    (d, runs) ← feed d runs (enter "alloc 1000")
-    IO.sleep 20
+    (d, runs) ← feed d runs (enter "Busy.alloc 1000")
+    IO.sleep 50
     (d, runs) ← feed d runs [ctrlC]
     let (d', runs', _) ← settle d runs
     d := d'; runs := runs'
-  IO.println s!"RSS: {rss0} MB at the start, {rss1} MB after the runs above, \
-    {← rssMB} MB after 50 more stopped"
+  IO.println s!"RSS: {rss1} MB after the runs above, {← rssMB} MB after 50 more stopped"
 
 def main (args : List String) : IO Unit := do
   let c ← Canvas.new screenW.toUInt32 screenH.toUInt32
+  -- The REPLs' Lean is imported in the background; the first line waits
+  -- for it.
+  let t0 ← IO.monoNanosNow
+  let base ← startBase
+  let svc : Services := { wake := Host.wake, eval := LeanMachine.eval base }
   match args with
-  | ["--test"] => test c; testRuns c
+  | ["--test"] =>
+    let _ ← IO.wait base
+    IO.println s!"the REPLs' Lean imported in {((← IO.monoNanosNow) - t0) / 1000000} ms, \
+      RSS {← rssMB} MB"
+    test c svc; testRuns c svc
   | ["--frames", n] =>
     Host.open "Lean Machine" screenW.toUInt32 screenH.toUInt32
-    run c start {} n.toNat?
+    run c svc start {} n.toNat?
   | _ =>
     Host.open "Lean Machine" screenW.toUInt32 screenH.toUInt32
-    run c start {} none
+    run c svc start {} none

@@ -1,13 +1,13 @@
 import LeanMachine.App
-import LeanMachine.Busy
 
-/-! # REPL: a line editor over a transcript
+/-! # REPL: Lean, a line at a time
 
-Enter asks the loop to run the line, on a thread of its own, and the
-outcome goes in the transcript when it comes back. The line can be edited
-meanwhile, and Ctrl+C stops the run. Until Lean is linked, a line runs as
-busy work (`alloc 100` and the like) or comes back as it went. Up and
-Down recall earlier lines. Pure: the REPL only asks. Everything is
+Enter asks the loop to evaluate the line in the REPL's Lean, on a thread
+of its own, and what Lean said goes in the transcript when it comes back,
+with the REPL's Lean after the line. That Lean is a value in the REPL's
+state, so each REPL has its own, and undo takes definitions back with
+the rest. The line can be edited meanwhile, and Ctrl+C stops the run. Up
+and Down recall earlier lines. Pure: the REPL only asks. Everything is
 monospace, so where a character or the cursor goes is arithmetic on
 `monoAdvance`. -/
 
@@ -60,6 +60,8 @@ inductive Entry where
   | note (s : String)     -- from the REPL itself
   | input (s : String)    -- a line entered, shown after the prompt
   | output (s : String)   -- what came back; it may span lines
+  | warning (s : String)
+  | error (s : String)
   deriving Repr
 
 -- The run the REPL is waiting for.
@@ -76,29 +78,15 @@ structure Repl where
   draft : String := ""            -- the line being typed, kept while Up goes back
   waiting : Option Waiting := none
   nextTag : Nat := 0
-  deriving Inhabited
-
--- What a line runs, until Lean is linked: busy work by name, `n` million
--- steps of it, or the line itself, which comes back as it went.
-def busyWork (line : String) : Unit → String :=
-  match (line.splitOn " ").filter (· != "") with
-  | [w, n] =>
-    match n.toNat? with
-    | some n =>
-      if w == "alloc" then fun _ => toString (Busy.alloc n)
-      else if w == "poll" then fun _ => toString (Busy.polled n)
-      else if w == "spin" then fun _ => toString (Busy.spin n)
-      else fun _ => line
-    | none => fun _ => line
-  | _ => fun _ => line
+  env : Option Env := none        -- the REPL's Lean; `none`: the desktop's own
 
 namespace Repl
 
 def edit (r : Repl) (f : Line → Line) : Repl := { r with line := f r.line }
 
 -- The line goes to the transcript and to the history, unless it's empty
--- or the same as the last one, and the REPL asks for it to be run. While
--- a run is going, Enter does nothing.
+-- or the same as the last one, and the REPL asks for it to be evaluated.
+-- While a run is going, Enter does nothing.
 def enter (r : Repl) : Option (Repl × List Request) :=
   if r.waiting.isSome then none else
   let s := r.line.text
@@ -108,7 +96,7 @@ def enter (r : Repl) : Option (Repl × List Request) :=
                                else s :: r.history }
   if s.isEmpty then some (r, [])
   else some ({ r with waiting := some { tag := r.nextTag }, nextTag := r.nextTag + 1 },
-             [.run r.nextTag (busyWork s)])
+             [.eval r.nextTag s r.env])
 
 -- Ctrl+C: stops the run, or with none going, clears the line.
 def interrupt (r : Repl) : Option (Repl × List Request) :=
@@ -120,22 +108,30 @@ def took (ms : Nat) : String :=
   if ms < 1000 then s!"{ms} ms"
   else s!"{ms / 1000}.{(ms % 1000) / 100} s"
 
--- The outcome of the run the REPL is waiting for goes in the transcript.
--- Outcomes of other runs (from before an undo, say) don't matter to it.
+def Said.entry : Said → Entry
+  | .info s => .output s
+  | .warning s => .warning s
+  | .error s => .error s
+
+-- The outcome of the run the REPL is waiting for goes in the transcript,
+-- and the Lean after the line becomes the REPL's. Outcomes of other runs
+-- (from before an undo, say) don't matter to it.
 def ended (r : Repl) (tag : Nat) (o : Outcome) (ms : Nat) : Option Repl :=
   match r.waiting with
   | some w =>
     if w.tag != tag then none else
+    let didn'tStop : List Entry :=
+      if w.stopping then [.note "it didn't stop: nothing on its way was a safepoint"]
+      else []
+    let timing : List Entry := if ms ≥ 100 then [.note s!"took {took ms}"] else []
     -- In the order they're read.
-    let entries : List Entry := match o with
-      | .value s =>
-        .output s ::
-        (if w.stopping then [.note "it didn't stop: nothing on its way was a safepoint"]
-         else []) ++
-        (if ms ≥ 100 then [.note s!"took {took ms}"] else [])
-      | .stopped => [.note (if ms == 0 then "stopped" else s!"stopped after {took ms}")]
-      | .failed why => [.note s!"failed: {why}"]
-    some { r with waiting := none, transcript := entries.reverse ++ r.transcript }
+    let (entries, env) : List Entry × Option Env := match o with
+      | .value s => (.output s :: didn'tStop ++ timing, r.env)
+      | .evaluated said env => (said.map Said.entry ++ didn'tStop ++ timing, some env)
+      | .stopped =>
+        ([.note (if ms == 0 then "stopped" else s!"stopped after {took ms}")], r.env)
+      | .failed why => ([.error s!"failed: {why}"], r.env)
+    some { r with waiting := none, env, transcript := entries.reverse ++ r.transcript }
   | none => none
 
 -- The line `n` back in the history; 0 is the line that was being typed.
@@ -195,12 +191,18 @@ def promptRows (cols : Nat) (cs : List Char) : List Row :=
         text := String.ofList (row.drop prompt.length), rgb := 0xc0caf5 }
     else { text := String.ofList row, rgb := 0xc0caf5 }
 
+-- `s`, which may span lines, in rows of `cols`.
+def lines (s : String) (rgb : UInt32) (cols : Nat) : List Row :=
+  ((s.toList.splitOn '\n').flatMap (cut cols)).map fun row =>
+    { text := String.ofList row, rgb }
+
 def Entry.rows (cols : Nat) : Entry → List Row
   | .input s => promptRows cols s.toList
-  | .output s => ((s.toList.splitOn '\n').flatMap (cut cols)).map fun row =>
-      { text := String.ofList row, rgb := 0x9ece6a }
+  | .output s => lines s 0x9ece6a cols
   | .note s => (cut cols s.toList).map fun row =>
       { text := String.ofList row, rgb := 0x565f89 }
+  | .warning s => lines s 0xe0af68 cols
+  | .error s => lines s 0xf7768e cols
 
 -- The transcript, then a row that says a run is going, then the line
 -- being edited and the cursor in it. Long lines wrap. When it all doesn't
@@ -244,9 +246,9 @@ def Repl.view (r : Repl) (w h : Float) : Picture :=
 
 def repl : App :=
   App.asking "REPL"
-    ({ transcript := [.note "No Lean yet. Enter runs a line on a thread of its own. \
-         Busy work, seconds of it: alloc 100, poll 1000, spin 1000 (millions of \
-         steps). Anything else comes back as it went. Ctrl+C stops a run. \
+    ({ transcript := [.note "Lean, with Init and the desktop's modules, LeanMachine \
+         open. A line is commands, or a term to evaluate. `world` is the desktop \
+         when you press Enter; `launch app` opens an app. Ctrl+C stops a run. \
          Up, Down: history."] } : Repl)
     Repl.step Repl.view (size := (560, 300))
 

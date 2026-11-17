@@ -27,6 +27,7 @@ inductive Event where
   | text (s : String)
   | tick (t : TimeOfDay)      -- from the loop, not the host
   | done (win tag : Nat) (outcome : Outcome) (ms : Nat)  -- from the loop: a run ended
+  | launch (win : Nat) (app : App)  -- from the loop: a run in window `win` opened `app`
 
 structure Win where
   id : Nat
@@ -115,7 +116,7 @@ def Win.toApp (w : Win) : Event → Option AppEvent
   | .text s => some (.text s)
   | .tick t => some (.tick t)
   | .done _ tag o ms => some (.done tag o ms)
-  | .menu .. | .quit => none
+  | .menu .. | .launch .. | .quit => none
 
 -- The window after its app hears `e`, and what the app asked for.
 def Win.hear (w : Win) (e : Event) : Win × List Asked :=
@@ -194,6 +195,10 @@ def World.stepWindows (world : World) : Event → World
   | .text s => world.toFocus (.text s)
   | .tick t => { world.toAll (.tick t) with time := t }
   | .done win tag o ms => world.tell (·.id == win) (.done win tag o ms)
+  | .launch win app =>
+    match world.windows.find? (·.id == win) with
+    | some w => world.launch app (w.x + 40) (w.y + 40)
+    | none => world.launch app world.mouseX world.mouseY
   | .quit => world
 
 -- With the menu open, a press on an item opens its app where the menu

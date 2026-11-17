@@ -8,9 +8,10 @@ becomes after an event, and what it asks the loop to do then. The desktop
 holds apps without knowing what kind they are, so any module can add one.
 
 An app can't do work that takes long in its step: the desktop waits for
-it. It asks for a run instead (`Request.run`): the loop computes the work
-on a thread of its own and tells the app the outcome as an event
-(`AppEvent.done`). Apps stay pure; the work is a pure function. -/
+it. It asks for a run instead: the loop computes a pure function
+(`Request.run`) or evaluates Lean (`Request.eval`) on a thread of its
+own, and tells the app the outcome as an event (`AppEvent.done`). Apps
+stay pure. -/
 
 namespace LeanMachine
 
@@ -21,19 +22,38 @@ structure TimeOfDay where
   second : Nat
   deriving BEq, Inhabited, Repr
 
+-- A REPL's Lean: the environment its lines are elaborated in, with the
+-- scopes they left open (`open`, `namespace`, `variable`). A value: a
+-- line makes a new one and the old one is still there. Opaque here, so
+-- that the pure modules needn't import Lean; the loop's side
+-- (LeanMachine/Eval.lean) knows what it is.
+opaque EnvPointed : NonemptyType
+def Env := EnvPointed.type
+instance : Nonempty Env := EnvPointed.property
+
+-- What Lean said about a line.
+inductive Said where
+  | info (s : String)      -- `#eval`'s output, say
+  | warning (s : String)
+  | error (s : String)
+  deriving BEq, Repr
+
 -- What an app asks the loop to do. A run is named by a tag the app
 -- chooses; its outcome comes back with the tag. A new run with the tag of
 -- one still going replaces it.
 inductive Request where
   | run (tag : Nat) (work : Unit → String)  -- `work ()`, on a thread of its own
+  -- Elaborates `src`, Lean commands or a term to evaluate, in `env`
+  -- (`none`: the desktop's own, Init and the desktop's modules).
+  | eval (tag : Nat) (src : String) (env : Option Env)
   | stop (tag : Nat)                        -- stop that run at its next safepoint
 
 -- How a run ended.
 inductive Outcome where
-  | value (s : String)     -- it finished with this
+  | value (s : String)     -- `run` finished with this
+  | evaluated (said : List Said) (env : Env)  -- `eval` finished: what Lean said, and the new Lean
   | stopped                -- a stop reached it (or there was no such run)
   | failed (why : String)  -- it couldn't run
-  deriving BEq, Repr
 
 -- An event as an app hears it. Positions are in the app's own coordinates:
 -- (0, 0) is the top left of its window's body.

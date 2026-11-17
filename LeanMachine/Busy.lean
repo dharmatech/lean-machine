@@ -1,8 +1,9 @@
-/-! # Busy work: compiled loops to run, and stop, before Lean is linked
+/-! # Busy work: compiled loops to run, and stop
 
 Each takes `n` million steps, and they differ only in where a stop can
 reach them. A run is stopped at a safepoint (runs.cpp): every small
-allocation, and `poll`. Pure; the REPL asks for these by name. -/
+allocation, and `poll`. Pure. The REPL's Lean imports this module, so
+`Busy.alloc 100` there runs this compiled code. -/
 
 namespace LeanMachine
 
