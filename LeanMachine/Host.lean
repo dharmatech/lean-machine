@@ -41,14 +41,18 @@ instance : Nonempty Canvas := CanvasPointed.property
 @[extern "sv_host_event"] opaque Host.event (timeoutMs : UInt32) : IO FloatArray
 
 -- An event as `Host.event` returns it: [kind, a, b, c], as
--- `sv_host_event` in shim.c writes it.
+-- `sv_host_event` in shim.c writes it. For a button, c is SDL's number
+-- for it: 1 left, 3 right.
 def Event.decode (a : FloatArray) : Option Event :=
   let x := a.get! 1
   let y := a.get! 2
+  let button := a.get! 3
   match (a.get! 0).toUInt32 with
   | 1 => some .quit
-  | 2 => if a.get! 3 == 1 then some (.press x y) else none   -- left button
-  | 3 => some (.release x y)
+  | 2 => if button == 1 then some (.press x y)
+         else if button == 3 then some (.menu x y)
+         else none
+  | 3 => if button == 1 then some (.release x y) else none
   | 4 => some (.motion x y)
   | 5 => some (.key x.toUInt32)
   | _ => none

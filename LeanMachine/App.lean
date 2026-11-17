@@ -31,6 +31,7 @@ structure App where
   title : String
   view : Float → Float → Picture          -- at a width and height
   step : AppEvent → Option App := fun _ => none
+  size : Float × Float := (414, 229)      -- the body a new window gives it
 
 instance : Inhabited App := ⟨{ title := "", view := fun _ _ => .group [] }⟩
 
@@ -38,9 +39,9 @@ instance : Inhabited App := ⟨{ title := "", view := fun _ _ => .group [] }⟩
 -- and how it looks. The state's type stays inside the app. Only this is
 -- `partial`; the functions an app passes it can be total.
 partial def App.of {σ : Type} (title : String) (s : σ)
-    (step : σ → AppEvent → Option σ) (view : σ → Float → Float → Picture) :
-    App :=
-  { title, view := view s,
-    step := fun e => (step s e).map fun s => App.of title s step view }
+    (step : σ → AppEvent → Option σ) (view : σ → Float → Float → Picture)
+    (size : Float × Float := (414, 229)) : App :=
+  { title, view := view s, size,
+    step := fun e => (step s e).map fun s => App.of title s step view size }
 
 end LeanMachine

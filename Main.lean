@@ -23,7 +23,10 @@ partial def run (c : Canvas) (d : Desktop) (frames : Option Nat) : IO Unit := do
   while raw.get! 0 != 0 do
     match Event.decode raw with
     | some .quit => quit := true
-    | some (.key k) => if k == keyEscape then quit := true else d := d.step (.key k)
+    -- Esc closes the menu if it's open, and quits if it isn't.
+    | some (.key k) =>
+      if k == keyEscape && d.now.menu.isNone then quit := true
+      else d := d.step (.key k)
     | some e => d := d.step e
     | none => pure ()
     raw ← Host.event 0
@@ -71,12 +74,17 @@ def sampler : Picture :=
 -- The pure world, driven by a script of events instead of a person.
 def test (c : Canvas) : IO Unit := do
   let grab := Event.press 300 (160 + 10)          -- Clock's title
-  -- N opens Window 5 at the pointer, (600, 450). Its body starts at
-  -- (603, 478), so this press drops a dot at (40, 60) in its own coordinates.
-  let dot := Event.press (603 + 40) (478 + 60)
+  -- A press on the middle of item `i` of a menu at (x, y).
+  let item (x y : Float) (i : Nat) : Event :=
+    .press (x + 20) (Menu.itemY ⟨x, y⟩ i + itemH / 2)
+  -- The menu opens Notes at (100, 400). Its body starts at (103, 428), so
+  -- this press drops a dot at (40, 60) in its own coordinates.
+  let dot := Event.press (103 + 40) (428 + 60)
   let script := [.tick ⟨10, 8, 30⟩,                 -- every app hears it
                  grab, .motion 1000 120, .release 1000 120,
-                 .motion 600 450, .key keyN,        -- a window at the pointer
+                 .menu 600 450, item 600 450 0,     -- right-click, Clock
+                 .motion 100 400, .key keyN,        -- N: the menu here
+                 item 100 400 3,                    -- Notes
                  dot,
                  .press (80 + 420 - 15) (70 + 14),  -- REPL's close box
                  .tick ⟨10, 8, 31⟩]
@@ -87,6 +95,13 @@ def test (c : Canvas) : IO Unit := do
   IO.println s!"Clock at {clockWin.map (·.x)} {clockWin.map (·.y)}; \
     in the start world still at {(start.now.windows.find? (·.title == "Clock")).map (·.x)}"
   render c d.view; c.savePng "after-script.png"
+  -- The menu open, the pointer on its second item.
+  let open_ := (d.step (.menu 700 250)).step
+    (.motion 720 (Menu.itemY ⟨700, 250⟩ 1 + 5))
+  render c open_.view; c.savePng "menu.png"
+  let off := open_.step (.press 20 20)
+  IO.println s!"a press off the menu: menu open {off.now.menu.isSome}, \
+    {off.now.windows.length} windows, {off.past.length} earlier worlds"
   let d := (d.step (.key keyU)).step (.key keyU)
   IO.println s!"after two undos: {d.now.windows.map (·.title)}"
   render c d.view; c.savePng "after-undo.png"

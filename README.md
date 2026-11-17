@@ -19,10 +19,12 @@ lake build                 # writes .lake/build/bin/desktop
 `lake exe desktop` does both: it builds if anything changed, then runs
 the desktop with any arguments that follow.
 
-Drag a window by its title, click one to raise it, click the box on a
-title to close it, press N for a new window at the pointer, U to undo, Esc
-to quit. The Clock window runs a clock; the others, and N's windows, run a
-placeholder app for now: click in one to drop a dot. The bar at the bottom counts the earlier worlds that undo can
+Right-click anywhere, or press N, for a menu of apps; choose one to open
+it in a new window where the menu was. Esc closes the menu, and so does a
+click off it. Drag a window by its title, click one to raise it, click
+the box on a title to close it, U to undo, Esc to quit. Clock is a clock;
+REPL, Inspector and Notes are placeholders for now: click in one to drop
+a dot. The bar at the bottom counts the earlier worlds that undo can
 return to.
 
 ```sh
@@ -31,8 +33,9 @@ return to.
 SDL_VIDEO_DRIVER=dummy .lake/build/bin/desktop --frames 20   # the same, with no display
 ```
 
-`--test` writes `after-script.png` and `after-undo.png` in the current
-directory, and `sampler.png`, one of each kind of picture.
+`--test` writes `after-script.png`, `after-undo.png` and `menu.png` (the
+menu open) in the current directory, and `sampler.png`, one of each kind
+of picture.
 
 Needs Lean 4.36 through elan (`lean-toolchain` pins it), Cairo, and SDL3's
 shared library. SDL3's headers (`libsdl3-dev`) are not needed.
@@ -50,8 +53,8 @@ import only each other. Only `Host` calls C, and only `Host` and
   (`translate`) or cut to a box (`clip`), and groups. Cairo measures text
   for `textIn` when it draws, so a view can center text and stay pure.
 - `App.lean`: an `App` is a value with a title, a `view` at a given
-  size, and a `step` that returns the app an event makes (`none`: no
-  change). `App.of` makes one from a state of any type, a step and a
+  size, a `step` that returns the app an event makes (`none`: no
+  change), and the `size` a new window gives it. `App.of` makes one from a state of any type, a step and a
   view, and hides the state's type, so the desktop holds apps of every
   kind in one list. `AppEvent` is an event in the app's own coordinates,
   or a tick with the `TimeOfDay`.
@@ -61,18 +64,24 @@ import only each other. Only `Host` calls C, and only `Host` and
   when the second does.
 - `Apps/Placeholder.lean`: stands in for apps not written yet. A click
   drops a dot where it lands.
-- `World.lean`: windows, the pointer and events. Each window holds an
-  app. `World.step : World → Event → World` drags, raises, focuses and
-  closes windows, passes ticks to every app, and passes other events to
-  the focused window's app, moved into the app's coordinates. `World.launch` opens an app in a new
-  window.
+- `World.lean`: windows, the pointer, the menu and events. Each window
+  holds an app. `World.step : World → Event → World` drags, raises,
+  focuses and closes windows, passes ticks to every app, and passes other
+  events to the focused window's app, moved into the app's coordinates.
+  The world holds a `catalog` of apps, the menu's items, but knows none
+  of them by name. `World.launch` opens an app in a new window, kept on
+  the screen and told the time first. `World.commits` says which events
+  start a step undo can return to: a press that does something.
 - `Desktop.lean`: `Desktop` is the world now and every world before it;
-  undo takes the previous one, apps' states included. Also `start`, the
-  desktop the program starts with.
+  undo takes the previous one, apps' states included. Also `catalog`,
+  what the menu opens, and `start`, the desktop the program starts with,
+  opened with `launch` as the menu would.
 - `View.lean`: `Desktop.view` returns a `Picture`. Each app's view is
-  moved to its window's body and cut to it.
+  moved to its window's body and cut to it. The menu draws over
+  everything, its item under the pointer lit.
 - `Host.lean`: the calls into `shim.c` (a canvas and one window),
-  `Event.decode` for the events the shim hands back, `localTime` (through
+  `Event.decode` for the events the shim hands back (the right button
+  is `Event.menu`), `localTime` (through
   Lean's `Std.Time`), and `render`, the only code that draws.
 - `Main.lean`: `run`, the loop and the only code that does I/O. Each
   pass waits for events, but not past 100 ms or the next second, applies
@@ -120,11 +129,17 @@ import only each other. Only `Host` calls C, and only `Host` and
 - **Apps are opaque.** The state inside an app is in closures, so nothing
   outside it, an Inspector included, can look at it. An app could later
   offer a description of itself.
+- **Opening an app is placing a value.** The menu's items are `App`
+  values, and choosing one puts that value in a new window. There is no
+  class to instantiate: every Clock starts as the same value and goes
+  its own way as it hears ticks.
 
 ## Ideas for next
 
-- A menu that opens apps, replacing N's placeholder window.
 - The desktop's keys (N, U) behind a modifier: apps never hear N or U
   now, so none could take typing.
+- Right-click for apps too, perhaps a window menu, now that the right
+  button always opens the desktop's menu.
+- Resizing windows: an app's `view` already takes its size.
 - Measure text in the view, for layout that wraps (Notes, a REPL).
 - Display scaling and a resizable window.

@@ -1,24 +1,28 @@
 import LeanMachine.App
 
-/-! # The world: the windows, the pointer, and what an event does to them
+/-! # The world: windows, the pointer, the menu, and what an event does
 
 Pure: `World.step` makes a new world and changes nothing. Each window
-holds an app. The world drags, raises and closes windows, passes ticks
-to every app, and passes other events to the focused window's app. -/
+holds an app. The world drags, raises and closes windows, opens apps from
+its menu, passes ticks to every app, and passes other events to the
+focused window's app. -/
 
 namespace LeanMachine
 
 def screenW : Float := 1280
 def screenH : Float := 800
+def barH : Float := 30        -- the bar along the bottom
 def titleH : Float := 28
+def frame : Float := 3        -- a window's edge, beside and below its body
 
 inductive Event where
   | quit
-  | press (x y : Float)
+  | press (x y : Float)       -- the left button
   | release (x y : Float)
   | motion (x y : Float)
+  | menu (x y : Float)        -- the right button: asks for the menu
   | key (code : UInt32)
-  | tick (t : TimeOfDay)   -- from the loop, not the host
+  | tick (t : TimeOfDay)      -- from the loop, not the host
 
 def keyEscape : UInt32 := 27
 def keyN : UInt32 := 'n'.toNat.toUInt32
@@ -36,10 +40,10 @@ structure Win where
 def Win.title (w : Win) : String := w.app.title
 
 -- The body: the part below the title, where the app draws.
-def Win.bodyX (w : Win) : Float := w.x + 3
+def Win.bodyX (w : Win) : Float := w.x + frame
 def Win.bodyY (w : Win) : Float := w.y + titleH
-def Win.bodyW (w : Win) : Float := w.w - 6
-def Win.bodyH (w : Win) : Float := w.h - titleH - 3
+def Win.bodyW (w : Win) : Float := w.w - 2 * frame
+def Win.bodyH (w : Win) : Float := w.h - titleH - frame
 
 -- Where the pointer grabbed a window's title, from its corner.
 structure Drag where
@@ -47,13 +51,40 @@ structure Drag where
   dx : Float
   dy : Float
 
+-- The menu that opens apps: where its corner is. Its items are the
+-- world's catalog, one per app.
+structure Menu where
+  x : Float
+  y : Float
+
+def menuW : Float := 180
+def menuHeadH : Float := 28   -- the line that says what the menu does
+def itemH : Float := 26
+
+-- The top of item `i`.
+def Menu.itemY (m : Menu) (i : Nat) : Float :=
+  m.y + menuHeadH + itemH * i.toFloat
+
 structure World where
   windows : List Win      -- back to front
   focus : Nat             -- 0: none
   drag : Option Drag
+  menu : Option Menu      -- none: closed
+  catalog : List App      -- what the menu opens
+  time : TimeOfDay        -- the last tick's; a new app hears it as it opens
   nextId : Nat
   mouseX : Float
   mouseY : Float
+
+def World.menuH (world : World) : Float :=
+  menuHeadH + itemH * world.catalog.length.toFloat + 6
+
+-- The number of the item of `m` at (x, y), if there is one.
+def World.itemAt? (world : World) (m : Menu) (x y : Float) : Option Nat :=
+  if m.x ≤ x && x < m.x + menuW && m.itemY 0 ≤ y then
+    let i := ((y - m.itemY 0) / itemH).floor.toUInt64.toNat
+    if i < world.catalog.length then some i else none
+  else none
 
 def Win.contains (w : Win) (x y : Float) : Bool :=
   w.x ≤ x && x < w.x + w.w && w.y ≤ y && y < w.y + w.h
@@ -79,7 +110,7 @@ def Win.hear (w : Win) (e : Event) : Win :=
     | .motion x y => some (.motion (x - dx) (y - dy))
     | .key k => some (.key k)
     | .tick t => some (.tick t)
-    | .quit => none
+    | .menu .. | .quit => none
   match heard.bind w.app.step with
   | some app => { w with app }
   | none => w
@@ -99,15 +130,27 @@ def World.toFocus (world : World) (e : Event) : World :=
 def World.toAll (world : World) (e : Event) : World :=
   { world with windows := world.windows.map (·.hear e) }
 
--- A new window at the pointer, holding `app`, in front and focused.
-def World.launch (world : World) (app : App) : World :=
+-- A new window holding `app`, with its corner at (x, y) or as near as
+-- keeps it on the screen, in front and focused. The app hears the time
+-- first, so a clock is right from its first frame.
+def World.launch (world : World) (app : App) (x y : Float) : World :=
   let n := world.nextId
-  let w : Win := { id := n, app, x := world.mouseX, y := world.mouseY,
-                   w := 320, h := 200 }
-  { world with windows := world.windows ++ [w], focus := n,
+  let app := (app.step (.tick world.time)).getD app
+  let w := app.size.1 + 2 * frame
+  let h := app.size.2 + titleH + frame
+  let win : Win := { id := n, app, w, h,
+                     x := max 0 (min x (screenW - w)),
+                     y := max 0 (min y (screenH - barH - h)) }
+  { world with windows := world.windows ++ [win], focus := n,
                nextId := n + 1 }
 
-def World.step (world : World) : Event → World
+-- The menu, open at (x, y) or as near as keeps it on the screen.
+def World.openMenu (world : World) (x y : Float) : World :=
+  { world with menu := some ⟨max 0 (min x (screenW - menuW)),
+                             max 0 (min y (screenH - barH - world.menuH))⟩ }
+
+-- What an event does to the windows, with no menu in the way.
+def World.stepWindows (world : World) : Event → World
   | .press x y =>
     match world.hit x y with
     | none => { world with focus := 0 }
@@ -131,8 +174,33 @@ def World.step (world : World) : Event → World
   | .release x y =>
     if world.drag.isSome then { world with drag := none }
     else world.toFocus (.release x y)
-  | .key k => world.toFocus (.key k)
-  | .tick t => world.toAll (.tick t)
+  | .menu x y => world.openMenu x y
+  | .key k =>
+    if k == keyN then world.openMenu world.mouseX world.mouseY
+    else world.toFocus (.key k)
+  | .tick t => { world.toAll (.tick t) with time := t }
   | .quit => world
+
+-- With the menu open, a press on an item opens its app where the menu
+-- was; a press anywhere else only closes the menu, and so does Esc.
+def World.step (world : World) (e : Event) : World :=
+  match world.menu, e with
+  | some m, .press x y =>
+    let world := { world with menu := none }
+    match (world.itemAt? m x y).bind fun i => world.catalog[i]? with
+    | some app => world.launch app m.x m.y
+    | none => world
+  | some _, .key k =>
+    if k == keyEscape then { world with menu := none } else world.stepWindows e
+  | _, _ => world.stepWindows e
+
+-- Whether `e` starts a step undo can return to. A press does, unless it
+-- only closes the menu; nothing else does.
+def World.commits (world : World) : Event → Bool
+  | .press x y =>
+    match world.menu with
+    | some m => (world.itemAt? m x y).isSome
+    | none => true
+  | _ => false
 
 end LeanMachine

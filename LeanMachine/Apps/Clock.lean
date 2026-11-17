@@ -50,6 +50,6 @@ def clock : App :=
     (fun shown e => match e with
       | .tick t => if t == shown then none else some t
       | _ => none)
-    clockFace
+    clockFace (size := (230, 259))
 
 end LeanMachine
