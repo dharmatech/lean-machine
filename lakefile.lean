@@ -22,6 +22,10 @@ target shim pkg : FilePath := do
   buildO (pkg.buildDir / "c" / "shim.o") src includes #["-O2", "-fPIC"] "cc"
     getLeanTrace
 
+/-- The modules under LeanMachine/, which Main.lean imports. -/
+lean_lib LeanMachine where
+  globs := #[.submodules `LeanMachine]
+
 @[default_target]
 lean_exe desktop where
   root := `Main

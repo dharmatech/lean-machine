@@ -38,16 +38,28 @@ shared library. SDL3's headers (`libsdl3-dev`) are not needed.
 
 ## How it's built
 
-- `Main.lean` holds everything above the C.
-  - `World.step : World → Event → World` drags, raises, focuses, closes
-    and opens windows. It is pure.
-  - `Desktop` is the world now and every world before it; undo takes the
-    previous one.
-  - `Desktop.view` returns a `Picture`, plain data. `render` is the only
-    code that draws, `run` the only code that does I/O.
+The Lean code is one module per file in `LeanMachine/`, in the
+`LeanMachine` namespace, with a thin `Main.lean` on top. `Picture`,
+`World`, `Desktop` and `View` are pure and import only each other. Only
+`Host` calls C, and only `Host` and `Main.lean` touch `IO`.
+
+- `Picture.lean`: `Picture`, plain data (rectangles, text, groups).
+- `World.lean`: windows, the pointer and events.
+  `World.step : World → Event → World` drags, raises, focuses, closes
+  and opens windows.
+- `Desktop.lean`: `Desktop` is the world now and every world before it;
+  undo takes the previous one. Also `start`, the desktop the program
+  starts with.
+- `View.lean`: `Desktop.view` returns a `Picture`.
+- `Host.lean`: the calls into `shim.c` (a canvas and one window),
+  `Event.decode` for the events the shim hands back, and `render`, the
+  only code that draws.
+- `Main.lean`: `run`, the loop and the only code that does I/O; `test`
+  for `--test`; and `main`.
 - `shim.c` is the only C: Cairo draws into an image in memory, and SDL3
   shows it in one window and hands back events. No GPU in the design.
-- `lakefile.lean` compiles both and links them.
+- `lakefile.lean` builds the `LeanMachine` library and `Main.lean`,
+  compiles `shim.c`, and links them into `desktop`.
 
 ## Findings so far
 
@@ -76,7 +88,6 @@ shared library. SDL3's headers (`libsdl3-dev`) are not needed.
 
 ## Ideas for next
 
-- Split `Main.lean` into modules (world, view, host).
 - Apps as a protocol: an `App` whose `step` and `view` return new apps,
   so the desktop holds an open list of them.
 - Measure text through Cairo, for layout.
