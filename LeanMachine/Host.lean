@@ -1,5 +1,6 @@
 import LeanMachine.Picture
 import LeanMachine.World
+import Std.Time
 
 /-! # The host: a canvas and one window (shim.c)
 
@@ -56,6 +57,14 @@ def Event.decode (a : FloatArray) : Option Event :=
 def Canvas.saved (c : Canvas) (act : IO Unit) : IO Unit := do
   c.save
   try act finally c.restore
+
+-- The local time of day, and the milliseconds left in its second. Lean's
+-- Std.Time reads it, no C: about 80 µs a call.
+def localTime : IO (TimeOfDay × Nat) := do
+  let t ← Std.Time.PlainTime.now
+  let ms := (t.nanosecond.val / 1000000).toNat
+  return ({ hour := t.hour.val.toNat, minute := t.minute.val.toNat,
+            second := t.second.val.toNat }, 1000 - ms)
 
 partial def render (c : Canvas) : Picture → IO Unit
   | .rect x y w h r rgb => c.fillRect x y w h r rgb

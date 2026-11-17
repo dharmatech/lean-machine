@@ -3,8 +3,8 @@ import LeanMachine.App
 /-! # The world: the windows, the pointer, and what an event does to them
 
 Pure: `World.step` makes a new world and changes nothing. Each window
-holds an app. The world drags, raises and closes windows, and passes
-other events to the focused window's app. -/
+holds an app. The world drags, raises and closes windows, passes ticks
+to every app, and passes other events to the focused window's app. -/
 
 namespace LeanMachine
 
@@ -18,6 +18,7 @@ inductive Event where
   | release (x y : Float)
   | motion (x y : Float)
   | key (code : UInt32)
+  | tick (t : TimeOfDay)   -- from the loop, not the host
 
 def keyEscape : UInt32 := 27
 def keyN : UInt32 := 'n'.toNat.toUInt32
@@ -77,6 +78,7 @@ def Win.hear (w : Win) (e : Event) : Win :=
     | .release x y => some (.release (x - dx) (y - dy))
     | .motion x y => some (.motion (x - dx) (y - dy))
     | .key k => some (.key k)
+    | .tick t => some (.tick t)
     | .quit => none
   match heard.bind w.app.step with
   | some app => { w with app }
@@ -92,6 +94,10 @@ def World.raise (world : World) (w : Win) : List Win :=
 def World.toFocus (world : World) (e : Event) : World :=
   { world with windows := world.windows.map fun w =>
       if w.id == world.focus then w.hear e else w }
+
+-- The world after every window's app hears `e`.
+def World.toAll (world : World) (e : Event) : World :=
+  { world with windows := world.windows.map (·.hear e) }
 
 -- A new window at the pointer, holding `app`, in front and focused.
 def World.launch (world : World) (app : App) : World :=
@@ -126,6 +132,7 @@ def World.step (world : World) : Event → World
     if world.drag.isSome then { world with drag := none }
     else world.toFocus (.release x y)
   | .key k => world.toFocus (.key k)
+  | .tick t => world.toAll (.tick t)
   | .quit => world
 
 end LeanMachine

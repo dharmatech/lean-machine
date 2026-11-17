@@ -9,13 +9,17 @@ open LeanMachine
 
 /-! ## The loop: the only I/O -/
 
--- Applies every waiting event, then draws once. `frames` stops it early
--- (for tests); the window's close button or Esc stops it any time.
+-- Applies every waiting event and a tick with the time, then draws once.
+-- `frames` stops it early (for tests); the window's close button or Esc
+-- stops it any time.
 partial def run (c : Canvas) (d : Desktop) (frames : Option Nat) : IO Unit := do
   if frames == some 0 then return
   let mut d := d
   let mut quit := false
-  let mut raw ← Host.event 100
+  -- Waits for an event, but not past 100 ms or the start of the next
+  -- second, so a clock turns over on time.
+  let (_, msLeft) ← localTime
+  let mut raw ← Host.event (min 100 (msLeft + 1)).toUInt32
   while raw.get! 0 != 0 do
     match Event.decode raw with
     | some .quit => quit := true
@@ -24,6 +28,8 @@ partial def run (c : Canvas) (d : Desktop) (frames : Option Nat) : IO Unit := do
     | none => pure ()
     raw ← Host.event 0
   if quit then return
+  let (t, _) ← localTime
+  d := d.step (.tick t)
   render c d.view
   Host.present c
   run c d (frames.map (· - 1))
@@ -65,18 +71,20 @@ def sampler : Picture :=
 -- The pure world, driven by a script of events instead of a person.
 def test (c : Canvas) : IO Unit := do
   let grab := Event.press 300 (160 + 10)          -- Clock's title
-  -- Clock's body starts at (623, 518) once Clock is at (620, 490), so this
-  -- press drops a dot at (40, 60) in Clock's own coordinates.
-  let dot := Event.press (623 + 40) (518 + 60)
-  let script := [grab, .motion 700 500, .release 700 500,
-                 .key keyN,                         -- a window at the pointer
+  -- N opens Window 5 at the pointer, (600, 450). Its body starts at
+  -- (603, 478), so this press drops a dot at (40, 60) in its own coordinates.
+  let dot := Event.press (603 + 40) (478 + 60)
+  let script := [.tick ⟨10, 8, 30⟩,                 -- every app hears it
+                 grab, .motion 1000 120, .release 1000 120,
+                 .motion 600 450, .key keyN,        -- a window at the pointer
                  dot,
-                 .press (80 + 420 - 15) (70 + 14)]  -- REPL's close box
+                 .press (80 + 420 - 15) (70 + 14),  -- REPL's close box
+                 .tick ⟨10, 8, 31⟩]
   let d := script.foldl Desktop.step start
   IO.println s!"after the script: {d.now.windows.map (·.title)}, \
     focus {d.now.focus}, {d.past.length} earlier worlds"
-  let clock := d.now.windows.find? (·.title == "Clock")
-  IO.println s!"Clock at {clock.map (·.x)} {clock.map (·.y)}; \
+  let clockWin := d.now.windows.find? (·.title == "Clock")
+  IO.println s!"Clock at {clockWin.map (·.x)} {clockWin.map (·.y)}; \
     in the start world still at {(start.now.windows.find? (·.title == "Clock")).map (·.x)}"
   render c d.view; c.savePng "after-script.png"
   let d := (d.step (.key keyU)).step (.key keyU)

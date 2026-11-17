@@ -21,8 +21,8 @@ the desktop with any arguments that follow.
 
 Drag a window by its title, click one to raise it, click the box on a
 title to close it, press N for a new window at the pointer, U to undo, Esc
-to quit. Every window runs a placeholder app for now: click in one to
-drop a dot. The bar at the bottom counts the earlier worlds that undo can
+to quit. The Clock window runs a clock; the others, and N's windows, run a
+placeholder app for now: click in one to drop a dot. The bar at the bottom counts the earlier worlds that undo can
 return to.
 
 ```sh
@@ -42,8 +42,8 @@ shared library. SDL3's headers (`libsdl3-dev`) are not needed.
 The Lean code is one module per file in `LeanMachine/`, in the
 `LeanMachine` namespace, with a thin `Main.lean` on top. `Picture`,
 `App`, the apps in `Apps/`, `World`, `Desktop` and `View` are pure and
-import only each other. Only
-`Host` calls C, and only `Host` and `Main.lean` touch `IO`.
+import only each other. Only `Host` calls C, and only `Host` and
+`Main.lean` touch `IO`.
 
 - `Picture.lean`: `Picture`, plain data: rectangles, circles, rings,
   lines, text at a point or aligned in a box, a picture moved
@@ -53,13 +53,18 @@ import only each other. Only
   size, and a `step` that returns the app an event makes (`none`: no
   change). `App.of` makes one from a state of any type, a step and a
   view, and hides the state's type, so the desktop holds apps of every
-  kind in one list. `AppEvent` is an event in the app's own coordinates.
+  kind in one list. `AppEvent` is an event in the app's own coordinates,
+  or a tick with the `TimeOfDay`.
+- `Apps/Clock.lean`: an analog face with the time in digits under it,
+  after Schevana's `apps/clock.ss`. `clockFace` is a pure function of the
+  time and the size; the app keeps the last tick's time and changes only
+  when the second does.
 - `Apps/Placeholder.lean`: stands in for apps not written yet. A click
   drops a dot where it lands.
 - `World.lean`: windows, the pointer and events. Each window holds an
   app. `World.step : World → Event → World` drags, raises, focuses and
-  closes windows, and passes other events to the focused window's app,
-  moved into the app's coordinates. `World.launch` opens an app in a new
+  closes windows, passes ticks to every app, and passes other events to
+  the focused window's app, moved into the app's coordinates. `World.launch` opens an app in a new
   window.
 - `Desktop.lean`: `Desktop` is the world now and every world before it;
   undo takes the previous one, apps' states included. Also `start`, the
@@ -67,10 +72,12 @@ import only each other. Only
 - `View.lean`: `Desktop.view` returns a `Picture`. Each app's view is
   moved to its window's body and cut to it.
 - `Host.lean`: the calls into `shim.c` (a canvas and one window),
-  `Event.decode` for the events the shim hands back, and `render`, the
-  only code that draws.
-- `Main.lean`: `run`, the loop and the only code that does I/O; `test`
-  for `--test`; and `main`.
+  `Event.decode` for the events the shim hands back, `localTime` (through
+  Lean's `Std.Time`), and `render`, the only code that draws.
+- `Main.lean`: `run`, the loop and the only code that does I/O. Each
+  pass waits for events, but not past 100 ms or the next second, applies
+  them, ticks with the time, and draws. Also `test` for `--test`, and
+  `main`.
 - `shim.c` is the only C: Cairo draws into an image in memory, and SDL3
   shows it in one window and hands back events. No GPU in the design.
 - `lakefile.lean` builds the `LeanMachine` library and `Main.lean`,
@@ -105,13 +112,17 @@ import only each other. Only
   already. `step` returns `Option App`, and `none` ends the chain. An app
   that keeps state refers to itself, so it can't be total; `App.of` is
   the one `partial` definition, and apps passed to it stay total.
+- **Time.** Lean's `Std.Time` reads the local time (`PlainTime.now`) in
+  about 80 µs, time zone included, so the loop calls it every frame and
+  no C is needed. Time comes into the pure world only as a tick event.
+  Undo puts back an earlier world, clocks included, but the loop ticks
+  before every frame, so a stale time is never drawn.
 - **Apps are opaque.** The state inside an app is in closures, so nothing
   outside it, an Inspector included, can look at it. An app could later
   offer a description of itself.
 
 ## Ideas for next
 
-- A clock app, with time coming in as tick events.
 - A menu that opens apps, replacing N's placeholder window.
 - The desktop's keys (N, U) behind a modifier: apps never hear N or U
   now, so none could take typing.
