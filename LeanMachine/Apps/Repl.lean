@@ -7,9 +7,12 @@ of its own, and what Lean said goes in the transcript when it comes back,
 with the REPL's Lean after the line. That Lean is a value in the REPL's
 state, so each REPL has its own, and undo takes definitions back with
 the rest. The line can be edited meanwhile, and Ctrl+C stops the run. Up
-and Down recall earlier lines. Pure: the REPL only asks. Everything is
-monospace, so where a character or the cursor goes is arithmetic on
-`monoAdvance`. -/
+and Down recall earlier lines. The line, and every line entered, is
+coloured by the tokens the REPL's Lean reads in it, and Tab completes
+the name before the cursor from the names that Lean has. Pure: the REPL
+only asks, and its Lean is a value with pure functions for both.
+Everything is monospace, so where a character or the cursor goes is
+arithmetic on `monoAdvance`. -/
 
 namespace LeanMachine
 
@@ -58,11 +61,19 @@ end Line
 
 inductive Entry where
   | note (s : String)     -- from the REPL itself
-  | input (s : String)    -- a line entered, shown after the prompt
+  -- A line entered, shown after the prompt, with its tokens as the
+  -- REPL's Lean read them then.
+  | input (s : String) (tokens : Array Token := #[])
   | output (s : String)   -- what came back; it may span lines
   | warning (s : String)
   | error (s : String)
   deriving Repr
+
+-- What Tab found for the name before the cursor: what it could become
+-- (none: nothing here starts with it).
+structure Offer where
+  word : String
+  names : List String
 
 -- The run the REPL is waiting for.
 structure Waiting where
@@ -70,19 +81,39 @@ structure Waiting where
   stopping : Bool := false   -- Ctrl+C asked it to stop
   deriving Inhabited
 
+-- The run that fetches the desktop's own Lean, for a REPL that has
+-- none yet: an empty line evaluated in it.
+def leanTag : Nat := 0
+
 structure Repl where
   line : Line := {}
+  tokens : Array Token := #[]     -- the line's, as the REPL's Lean reads it
+  offer : Option Offer := none    -- what Tab found, until the line changes
   transcript : List Entry := []   -- newest first
   history : List String := []     -- lines entered, newest first
   back : Nat := 0                 -- how far back in the history the line is
   draft : String := ""            -- the line being typed, kept while Up goes back
   waiting : Option Waiting := none
-  nextTag : Nat := 0
+  nextTag : Nat := leanTag + 1
   env : Option Env := none        -- the REPL's Lean; `none`: the desktop's own
+  askedLean : Option TimeOfDay := none  -- the tick it last asked for that in
 
 namespace Repl
 
 def edit (r : Repl) (f : Line → Line) : Repl := { r with line := f r.line }
+
+-- The line's tokens, read again by the REPL's Lean: after anything that
+-- may change the line or the Lean. None until the REPL has its Lean.
+def relex (r : Repl) : Repl :=
+  { r with tokens := (r.env.map (·.tokens r.line.text)).getD #[] }
+
+-- A REPL with no Lean of its own yet asks for the desktop's, at most
+-- once a second while it has none (an undo may bring back a REPL whose
+-- answer went to a world that's gone).
+def askLean (r : Repl) (t : TimeOfDay) : Option (Repl × List Request) :=
+  if r.env.isNone && r.askedLean != some t then
+    some ({ r with askedLean := some t }, [.eval leanTag "" none])
+  else none
 
 -- The line goes to the transcript and to the history, unless it's empty
 -- or the same as the last one, and the REPL asks for it to be evaluated.
@@ -91,7 +122,7 @@ def enter (r : Repl) : Option (Repl × List Request) :=
   if r.waiting.isSome then none else
   let s := r.line.text
   let r := { r with line := {}, back := 0, draft := "",
-                    transcript := .input s :: r.transcript,
+                    transcript := .input s r.tokens :: r.transcript,
                     history := if s.isEmpty || r.history.head? == some s then r.history
                                else s :: r.history }
   if s.isEmpty then some (r, [])
@@ -160,14 +191,58 @@ def editKey (r : Repl) : Key → Option Repl
   | .down => if r.back > 0 then some (r.goBack (r.back - 1)) else none
   | _ => none
 
--- Other modifiers don't matter yet: Ctrl+Left is Left.
-def step (r : Repl) : AppEvent → Option (Repl × List Request)
-  | .text s => some (r.edit (·.insert s), [])
-  | .key .enter _ => r.enter
-  | .key (.char 'c') m => if m == { ctrl := true } then r.interrupt else none
-  | .key k _ => (r.editKey k).map (·, [])
-  | .done tag o ms => (r.ended tag o ms).map (·, [])
+-- The name before the cursor, as far back as there are characters a
+-- name can have, dots included: `Nat.su` in `(Nat.su`. Empty unless it
+-- starts the way a name does (not `.1`, `3.5` or `x.`'s field).
+def wordBefore (before : List Char) : String :=
+  match (before.takeWhile fun c => Lean.isIdRest c || c == '.').reverse with
+  | c :: cs => if Lean.isIdFirst c then String.ofList (c :: cs) else ""
+  | [] => ""
+
+-- Is the cursor in a string, a comment, or where the tokenizer gave up?
+def inText (r : Repl) : Bool :=
+  let at_ := r.line.cursor
+  r.tokens.any fun t =>
+    t.start < at_ && at_ ≤ t.stop && [.string, .comment, .error].contains t.kind
+
+def commonPrefix : List String → String
+  | [] => ""
+  | s :: rest => rest.foldl (init := s) fun a b =>
+      String.ofList (((a.toList.zip b.toList).takeWhile fun (x, y) => x == y).map (·.1))
+
+-- Tab: the name before the cursor, finished as far as every name it
+-- could become agrees, from the REPL's Lean. When it could become more
+-- than one, they're offered under the line until it changes.
+def tab (r : Repl) : Option Repl := do
+  let env ← r.env
+  let word := wordBefore r.line.before
+  if word.isEmpty || r.inText then none
+  let names := (env.complete word).toList
+  let more := String.ofList ((commonPrefix names).toList.drop word.length)
+  let r := if more.isEmpty then r else r.edit (·.insert more)
+  some { r with offer := if names.length == 1 then none else some { word, names } }
+
+-- An edit or a key that isn't Tab takes the offer away.
+def heard (r : Repl) : AppEvent → Option (Repl × List Request)
+  | .text s => some ({ r with offer := none }.edit (·.insert s), [])
+  | .key .tab m => if m == {} then (r.tab).map (·, []) else none
+  | .key .enter _ => { r with offer := none }.enter
+  | .key (.char 'c') m =>
+    if m == { ctrl := true } then { r with offer := none }.interrupt else none
+  | .key k _ => ({ r with offer := none }.editKey k).map (·, [])
+  | .done tag o ms =>
+    if tag == leanTag then
+      match o, r.env with
+      | .evaluated _ env, none => some ({ r with env := some env }, [])
+      | _, _ => none
+    else (r.ended tag o ms).map (·, [])
+  | .tick t => r.askLean t
   | _ => none
+
+-- Other modifiers don't matter yet: Ctrl+Left is Left. Whatever changes
+-- the REPL, the line's tokens are read again.
+def step (r : Repl) (e : AppEvent) : Option (Repl × List Request) :=
+  (r.heard e).map fun (r, asks) => (r.relex, asks)
 
 end Repl
 
@@ -177,43 +252,97 @@ def replFont : Float := 15     -- monoAdvance 15 = 9 pixels a column
 def replLineH : Float := 20
 def replPad : Float := 10
 def prompt : String := "> "
+def promptRgb : UInt32 := 0x7aa2f7
+def plainRgb : UInt32 := 0xc0caf5
 
--- A row on the screen: `lead` in the prompt's color, then `text`.
-structure Row where
-  lead : String := ""
-  text : String
+-- Tokyo Night's colours for Lean's tokens.
+def TokenKind.rgb : TokenKind → UInt32
+  | .keyword => 0xbb9af7
+  | .symbol => 0x89ddff
+  | .constant => 0x7aa2f7
+  | .ident => plainRgb
+  | .number => 0xff9e64
+  | .string => 0x9ece6a
+  | .comment => 0x565f89
+  | .error => 0xf7768e
+
+-- A stretch of a row in one colour, from column `col`. A row is a list
+-- of them, each drawn as one `mono`.
+structure Run where
+  col : Nat
   rgb : UInt32
+  text : String
 
--- `cs` cut into rows of `cols` characters. No characters is one empty row.
-def cut (cols : Nat) (cs : List Char) : List (List Char) :=
-  let a := cs.toArray
-  (List.range (max 1 ((a.size + cols - 1) / cols))).map fun i =>
-    (a.extract (i * cols) ((i + 1) * cols)).toList
+abbrev Row := List Run
 
--- The prompt and the characters after it, in rows of `cols`.
-def promptRows (cols : Nat) (cs : List Char) : List Row :=
-  (cut cols (prompt.toList ++ cs)).zipIdx.map fun (row, i) =>
-    if i == 0 then
-      { lead := String.ofList (row.take prompt.length),
-        text := String.ofList (row.drop prompt.length), rgb := 0xc0caf5 }
-    else { text := String.ofList row, rgb := 0xc0caf5 }
+-- Characters coloured one by one, in rows of `cols`: each row's runs of
+-- one colour. A space goes in the run before it, whatever its colour (it
+-- draws nothing), so a row has as few runs as it can. No characters is
+-- one empty row.
+def runRows (cols : Nat) (cs : Array Char) (rgbs : Array UInt32) : List Row :=
+  (List.range (max 1 ((cs.size + cols - 1) / cols))).map fun i =>
+    let lo := i * cols
+    let runs := (List.range' lo (min cs.size (lo + cols) - lo)).foldl (init := ([] : List Run))
+      fun runs j =>
+        let c := cs[j]!
+        let rgb := rgbs[j]!
+        match runs with
+        | run :: rest =>
+          if c == ' ' || run.rgb == rgb then { run with text := run.text.push c } :: rest
+          else { col := j - lo, rgb, text := c.toString } :: runs
+        | [] => if c == ' ' then [] else [{ col := j - lo, rgb, text := c.toString }]
+    runs.reverse
 
--- `s`, which may span lines, in rows of `cols`.
+-- `s`, which may span lines, in rows of `cols`, all in `rgb`.
 def lines (s : String) (rgb : UInt32) (cols : Nat) : List Row :=
-  ((s.toList.splitOn '\n').flatMap (cut cols)).map fun row =>
-    { text := String.ofList row, rgb }
+  (s.splitOn "\n").flatMap fun l =>
+    let cs := l.toList.toArray
+    runRows cols cs (Array.replicate cs.size rgb)
+
+-- The colour of each of `n` characters: its token's, or plain.
+def tokenColours (n : Nat) (tokens : Array Token) : Array UInt32 :=
+  tokens.foldl (init := Array.replicate n plainRgb) fun a t =>
+    (List.range' t.start (min t.stop n - t.start)).foldl (fun a i => a.set! i t.kind.rgb) a
+
+-- The prompt, then a line coloured by its tokens, in rows of `cols`.
+def promptRows (cols : Nat) (s : String) (tokens : Array Token) : List Row :=
+  let cs := s.toList.toArray
+  runRows cols (prompt.toList.toArray ++ cs)
+    (Array.replicate prompt.length promptRgb ++ tokenColours cs.size tokens)
 
 def Entry.rows (cols : Nat) : Entry → List Row
-  | .input s => promptRows cols s.toList
+  | .input s tokens => promptRows cols s tokens
   | .output s => lines s 0x9ece6a cols
-  | .note s => (cut cols s.toList).map fun row =>
-      { text := String.ofList row, rgb := 0x565f89 }
+  | .note s => lines s 0x565f89 cols
   | .warning s => lines s 0xe0af68 cols
   | .error s => lines s 0xf7768e cols
 
+-- What Tab offered, without the namespace typed before them (`map`,
+-- not `List.map`), in at most `most` rows; if they don't fit, the last
+-- row says how many more. As many columns as the names shown fit in,
+-- each as wide as the longest of them.
+def Offer.rows (o : Offer) (cols : Nat) (most : Nat := 6) : List Row :=
+  if o.names.isEmpty then lines s!"nothing here starts with {o.word}" 0x565f89 cols else
+  let typed := (o.word.toList.reverse.dropWhile (· != '.')).length
+  let names := o.names.map fun n => String.ofList (n.toList.drop typed)
+  let width (per : Nat) : Nat :=
+    ((names.take (per * most)).foldl (fun m n => max m n.length) 0) + 2
+  let per := ((List.range (cols / 3)).reverse.find? fun i => (i + 1) * width (i + 1) ≤ cols + 2)
+    |>.map (· + 1) |>.getD 1
+  let w := width per
+  let rows := (names.length + per - 1) / per
+  let shown := if rows ≤ most then rows else most - 1
+  let row (i : Nat) : Row :=
+    ((names.drop (i * per)).take per).zipIdx.map fun (n, k) =>
+      { col := k * w, rgb := 0x9aa5ce, text := n }
+  (List.range shown).map row ++
+    (if rows ≤ most then []
+     else lines s!"… and {o.names.length - shown * per} more: type more of the name" 0x565f89 cols)
+
 -- The transcript, then a row that says a run is going, then the line
--- being edited and the cursor in it. Long lines wrap. When it all doesn't
--- fit, the oldest rows go off the top, so the newest stay in view.
+-- being edited and the cursor in it, then what Tab offered. Long lines
+-- wrap. When it all doesn't fit, the oldest rows go off the top, so the
+-- newest stay in view.
 def Repl.view (r : Repl) (w h : Float) : Picture :=
   let adv := monoAdvance replFont
   let cols := max 4 ((w - 2 * replPad) / adv).floor.toUInt64.toNat
@@ -221,14 +350,14 @@ def Repl.view (r : Repl) (w h : Float) : Picture :=
   -- Where the cursor is, counting the prompt. At the end of a full row
   -- it starts the next one.
   let p := prompt.length + r.line.cursor
-  let editing := promptRows cols r.line.chars
-  let editing :=
-    if p / cols < editing.length then editing
-    else editing ++ [{ text := "", rgb := 0 }]
+  let editing := promptRows cols r.line.text r.tokens
+  let editing := if p / cols < editing.length then editing else editing ++ [[]]
   let status : List Row := match r.waiting with
-    | some w => (cut cols (if w.stopping then "stopping…".toList
-                           else "running… Ctrl+C stops it".toList)).map fun row =>
-        { text := String.ofList row, rgb := 0xe0af68 }
+    | some w => lines (if w.stopping then "stopping…" else "running… Ctrl+C stops it")
+        0xe0af68 cols
+    | none => []
+  let offered := match r.offer with
+    | some o => o.rows cols
     | none => []
   -- Only the newest entries are cut into rows: enough to fill the view.
   let rec newest (es : List Entry) (rows : List Row) (n : Nat) : List Row :=
@@ -239,15 +368,15 @@ def Repl.view (r : Repl) (w h : Float) : Picture :=
         let rs := e.rows cols
         newest rest (rs ++ rows) (n + rs.length)
     | [] => rows
-  let all := newest r.transcript (status ++ editing) (status.length + editing.length)
+  let below := status ++ editing ++ offered
+  let all := newest r.transcript below below.length
   let gone := all.length - fits
   let rows := all.drop gone
-  let cursorRow := all.length - editing.length + p / cols - gone
+  let cursorRow := all.length - offered.length - editing.length + p / cols - gone
   let top (i : Nat) : Float := replPad + replLineH * i.toFloat
   .group (rows.zipIdx.flatMap (fun (row, i) =>
-      let y := top i + 14
-      (if row.lead.isEmpty then [] else [.mono replPad y replFont 0x7aa2f7 row.lead]) ++
-      [.mono (replPad + adv * row.lead.length.toFloat) y replFont row.rgb row.text]) ++
+      row.map fun run =>
+        .mono (replPad + adv * run.col.toFloat) (top i + 14) replFont run.rgb run.text) ++
     [.rect (replPad + adv * (p % cols).toFloat - 1) (top cursorRow + 2)
        2 (replLineH - 4) 0 0xbb9af7])
 
@@ -256,7 +385,7 @@ def repl : App :=
     ({ transcript := [.note "Lean, with Init and the desktop's modules, LeanMachine \
          open. A line is commands, or a term to evaluate. `world` is the desktop \
          when you press Enter; `launch app` opens an app. Ctrl+C stops a run. \
-         Up, Down: history."] } : Repl)
+         Up, Down: history. Tab completes a name."] } : Repl)
     Repl.step Repl.view (size := (560, 300))
 
 end LeanMachine

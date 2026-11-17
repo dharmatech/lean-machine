@@ -46,7 +46,16 @@ run, and the REPL says "interrupted after …"; anything else is cut off
 at a safepoint, past any `finally` ("cut off after …"). Click in the
 REPL and type; Left, Right, Home, End, Backspace
 and Delete edit the line, and Up and Down go back and forth through
-earlier lines.
+earlier lines. The line, and every line entered, is coloured by the
+tokens the REPL's Lean reads in it: keywords purple, symbols cyan,
+names of constants blue (`sq` turns blue once it's defined), other
+identifiers pale, numbers orange, strings green, comments gray, and red
+from where Lean's tokenizer gives up (`"unterminated`). Tab completes the
+name before the cursor from the names that REPL's Lean has, its own
+definitions and open namespaces included (`Busy.al` → `Busy.alloc`,
+`monoAdv` → `monoAdvance`), as far as every name it could become
+agrees, and shows them under the line when there's more than one
+(`Picture.` shows its ten constructors).
 Inspector and Notes are placeholders: click in one to drop a dot, or
 type into it to see the text and the last key, with its modifiers, that
 it heard. The bar at the bottom counts
@@ -64,7 +73,15 @@ and history) in the current directory, and `sampler.png`, one of each
 kind of picture. It also prints the REPL's line, history and first
 entries after that script, and what `Event.decode` makes of a few
 events as the shim hands them back, and the monospace font's own
-advance beside `monoAdvance`'s. Then it evaluates Lean on real threads
+advance beside `monoAdvance`'s. It prints the tokens the REPL's Lean
+reads in two lines, and what Tab makes of names with one completion
+and with several, and writes `repl-highlight.png` (lines of every kind
+of token, and a line being edited), `repl-complete.png` (`Picture.`
+and Tab) and `repl-complete-many.png` (`List.ma`, 236 names). It
+times reading a line's tokens, a keystroke, Lean's parser on the same
+line, Tab on a few names, making the index of names, and drawing a
+REPL window full of highlighted lines against the same lines in one
+colour. Then it evaluates Lean on real threads
 through the desktop's REPL and the loop's `feed`, and prints what came
 back from each line: definitions, a type error, a namespace across
 lines, `world`, printed output. Busy work and loops defined in the REPL
@@ -121,8 +138,11 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   `Outcome` (a value; what Lean said, as `Said` messages, and the `Env`
   after the line; stopped, cleanly, with what Lean said first, or cut
   off; failed) comes back as an event with the tag and the milliseconds
-  the run took. `Env`, a REPL's Lean, is opaque
-  here, so the pure modules don't import Lean.
+  the run took. An `Env`, a REPL's Lean, holds Lean's state, opaque
+  here, so the pure modules don't import Lean, and two pure functions
+  over it that Eval.lean makes: `tokens`, a line's `Token`s (where each
+  starts and stops, in characters, and its `TokenKind`), and
+  `complete`, what a name being typed could become.
   `App.asking` makes an app from a state of any type, a step and a view,
   and hides the state's type, so the desktop holds apps of every kind
   in one list; `App.of` makes one that never asks. `AppEvent` is an
@@ -144,7 +164,10 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   after Schevana's `apps/clock.ss`. `clockFace` is a pure function of the
   time and the size; the app keeps the last tick's time and changes only
   when the second does.
-- `Apps/Repl.lean`: a line editor over a transcript. Enter asks for the
+- `Apps/Repl.lean`: a line editor over a transcript. A new REPL asks
+  for the desktop's own Lean when it hears its first tick (an empty
+  line evaluated there, under a tag of its own; again each second while
+  it has none). Enter asks for the
   line to be evaluated in the REPL's `Env` (none at first: the
   desktop's own) and waits for one run at a time; a row under the
   transcript says it's running, and Ctrl+C asks for a stop. What Lean
@@ -159,7 +182,16 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   cuts only the newest entries into rows, as many as fill the window;
   long lines wrap at the window's width in columns. Rows start at the
   top, and once they overflow the oldest go off the top, so the newest
-  and the line being edited stay in view.
+  and the line being edited stay in view. Whatever changes the REPL,
+  its Lean reads the line's tokens again (`relex`), and Enter keeps them
+  with the line in the transcript, so the view only colours: each
+  character takes its token's colour, and a row is drawn as runs of
+  one colour, a `mono` each, at the column it starts in. Tab
+  (`Repl.tab`) takes the name before the cursor (`wordBefore`, Lean's
+  `isIdRest` and dots), unless the cursor is in a string or a comment,
+  asks the `Env` what it could become, inserts as much as they all
+  share, and keeps the rest as an `Offer` drawn under the line, in
+  columns, without the namespace typed, until the line changes.
 - `Apps/Placeholder.lean`: stands in for apps not written yet. A click
   drops a dot where it lands; it shows what was typed into it and the
   last key it heard.
@@ -207,8 +239,18 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   the calling thread with `runCommands`, its own loop over Lean's
   parser and `elabCommandTopLevel`, with the run's cancel token; once
   it's set, no more commands are elaborated and the line has stopped,
-  cleanly. An `Env` is Lean's `Command.State`: the environment and the
-  scopes left open. The REPLs' Lean compiles with one pass more than
+  cleanly. An `Env` holds Lean's `Command.State`, the environment and
+  the scopes left open, with `lexLine` and `completeIn` over it.
+  `lexLine` runs Lean's tokenizer (`tokenFn`) along the line with the
+  environment's token table, and calls an identifier a constant if
+  `resolveGlobalName` finds one for it from the line's scope; what lies
+  between tokens and isn't blank is a comment. `completeIn` looks the
+  name's last part up among the names in the namespace its other parts
+  name, from the current namespace, the ones around it, the root and
+  the open ones, plus what the REPL defined and, with no namespace,
+  keywords; theorems come after the rest. The names imported are
+  indexed by namespace once, in a task of its own after the import
+  (`nameIndex`), and every REPL shares the index. The REPLs' Lean compiles with one pass more than
   Lean's own (`withSafepoints`): `safepointsPass`, at the end of the
   compiler's impure phase, starts every function at a safepoint, and an
   IO function (`returnsIO`) at one that can return `interrupted`.
@@ -519,6 +561,97 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   code in a window, and its step and view run in the interpreter on the
   main thread, between frames. A step that never returns would hang the
   desktop: nothing guards the main thread yet.
+- **Highlighting by Lean's tokenizer.** Lean's tokenizer
+  (`Lean.Parser.tokenFn`) reads one token at a time with the
+  environment's token table, so the REPL's own Lean decides what a token
+  is, and notation defined in a REPL is read as the parser will read
+  it. Each token comes back as syntax with its place in the line: an
+  atom (a keyword when it's a word, as Lean's editor decides: `def`,
+  `s!`, `#eval`; a symbol otherwise), an identifier, or a literal. A
+  line of 52 characters takes 22 µs, about a microsecond a token, and
+  one of 200 characters 97 µs; a keystroke, the REPL's step with the
+  line read again, 26 µs. Lean's whole parser takes 65 µs on the same
+  line, so parsing at every keystroke would be affordable too, but a
+  line being typed is seldom a whole term yet, and the parser's error
+  would turn the end of every unfinished line red.
+- **What the tokenizer leaves to its caller.** It isn't a lexer with an
+  API of its own: `tokenFn` is a `ParserFn`, run with an input context,
+  a module context (environment, options, namespace, open
+  declarations) and the token table (`ParserFn.run`), and the blanks
+  before the first token are skipped by hand (`whitespace`). Comments
+  aren't tokens: `whitespace` skips them after each token, so a comment
+  is whatever lies between tokens and isn't blank. Doc comments (`/--`,
+  `/-!`) are tokens whose bodies the tokenizer doesn't read
+  (`finishCommentBlock` does). It stops at the first error, with no
+  recovery, so the REPL colours the rest of the line red. Its
+  positions are bytes of UTF-8 (`String.Pos.Raw`) and the REPL's grid
+  counts characters, so each one is counted again (for nothing when the
+  line is ASCII).
+- **Names that resolve.** `ResolveName.resolveGlobalName` is a pure
+  function of an environment, options, the current namespace and the
+  open declarations, so an identifier it resolves is drawn as a
+  constant: the REPL's own definitions, names reached through `open`,
+  and a constant followed by fields. Lean's editor tells more
+  apart, variables, functions, types, from the info trees the
+  elaborator fills (`Lean.Server.FileWorker.SemanticHighlighting`).
+  That takes a line that elaborates, with info trees on (the REPL keeps
+  them off), in the language server's request monad: possible after
+  Enter, not at each keystroke.
+- **Completion.** Lean's own completion (`Lean.Server.Completion`)
+  isn't a function of an environment and a name: it works from the info
+  trees of an elaborated file at an LSP position, in the server's
+  `RequestM`, and answers LSP `CompletionItem`s. What it's made of can
+  be used as it is: `Meta.allowCompletion` (no auxiliary recursors,
+  matchers, `noConfusion` or internal names), `isProtected`,
+  `isPrivateName`, and its rule that a namespace that is also a
+  constant isn't offered as a namespace (`Picture.brecOn`, which holds
+  its equation lemmas, would be). The REPL's completion is about 60
+  lines over those: names by namespace, from every namespace a name
+  could be resolved from (the current one and those around it, the
+  root, the open ones), what the REPL defined, and keywords from the
+  token table (`Trie.findPrefix`). The constants imported are indexed
+  by namespace once, as the language server caches its "eligible
+  header declarations" in a global: 38,575 names in 2,944 namespaces,
+  of 67,237 constants, in 90 ms, in a task of its own after the import,
+  so the REPLs' Lean is still ready 140 ms after the desktop starts.
+  Tab then takes 2 µs for `Busy.al` (one name), 130 µs for `List.ma`
+  (236), 0.9 ms for `Nat.` (2,020): quick enough for the REPL's step, on
+  the main thread, as a pure function. Most names are theorems' (219 of
+  the 236 for `List.ma`), so they come after the definitions.
+  What needs elaboration isn't done: a field after a term (`xs.ma`, which
+  the type of `xs` decides) and a constructor by the type expected
+  (`.cir`).
+- **A value that carries its functions.** A pure module can't call a
+  function defined in a module it doesn't import: Lean has no forward
+  declarations across modules, short of `@[extern "sym"]` in one and
+  `@[export sym]` in the other, joined by the linker by name and checked
+  by nothing. The REPL can't import Eval.lean, which imports Lean (the
+  REPLs' Lean would then import all of Lean, 1.6 GB), so an `Env`
+  carries `tokens` and `complete` as closures that Eval.lean makes with
+  it. The REPL's step and view stay pure, as the functions are, and the
+  type checker sees every call.
+- **A REPL asks for its Lean.** Before its first line a REPL has no
+  `Env`, only "the desktop's own", which the loop imports in the
+  background. It asks for it as it opens, as the run of an empty line,
+  and colours nothing until it comes (140 ms after the desktop starts;
+  a millisecond later). An undo can bring back a REPL whose answer went
+  to a world that's gone, so a REPL without its Lean asks again each
+  second.
+- **Colours on the grid.** `Picture` needed nothing new: the grid says
+  where every character goes, so a row of several colours is a `mono`
+  for each run of one colour, at the column it starts in. A REPL window
+  full of highlighted lines draws 156 monos instead of 24, in 375 µs
+  instead of 200 (about 1.3 µs a mono: Cairo selects the font, turns
+  text into glyphs and composites, per call), and makes its view in 80
+  µs instead of 37. A frame still takes about 1.6 ms. A `mono` with a
+  colour for each character, one call into the shim a row, would save
+  most of that if many windows showed code.
+- **Reading an environment from two threads.** The view calls the
+  tokenizer on the main thread while a run may be elaborating from the
+  same environment on another thread. Nothing needs a lock: the
+  environment is persistent data, and the run's closure marked it
+  multi-threaded when the run took it, so its reference counts change
+  atomically.
 
 ## Ideas for next
 
@@ -532,6 +665,14 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   for them after a few frames' time.
 - Definitions shared between REPLs, or a REPL opened from another's Lean.
 - Errors pointed at with a caret under the line, not a column number.
+- Completion that needs elaboration: a field or function after a term
+  (`xs.ma`) or a constructor by the type expected (`.cir`). Elaborate
+  the line up to the cursor in a run, with info trees on, and ask Lean's
+  own completion; Tab would answer when the run ends.
+- Colours by meaning once a line is entered: it's elaborated then, so
+  with info trees on, variables, functions and types could be told
+  apart as Lean's editor does.
+- Tab again to go through what's offered, or a click on an offered name.
 - The REPL: scroll back through the transcript (PageUp, the wheel),
   place the cursor with a click, Ctrl+A and Ctrl+E, and keep the cursor
   in view when a line is taller than the window.

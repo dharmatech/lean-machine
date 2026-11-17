@@ -22,14 +22,45 @@ structure TimeOfDay where
   second : Nat
   deriving BEq, Inhabited, Repr
 
--- A REPL's Lean: the environment its lines are elaborated in, with the
--- scopes they left open (`open`, `namespace`, `variable`). A value: a
--- line makes a new one and the old one is still there. Opaque here, so
--- that the pure modules needn't import Lean; the loop's side
--- (LeanMachine/Eval.lean) knows what it is.
-opaque EnvPointed : NonemptyType
-def Env := EnvPointed.type
-instance : Nonempty Env := EnvPointed.property
+-- What kind of token Lean's tokenizer read.
+inductive TokenKind where
+  | keyword    -- a token that is a word: `def`, `fun`, `#eval`
+  | symbol     -- any other token: `:=`, `(`, `+`
+  | constant   -- an identifier that names a constant here: `Nat.succ`
+  | ident      -- any other identifier: a variable, or a name not defined yet
+  | number     -- `42`, `0x1f`, `2.5`
+  | string     -- a string, a character, or a name: `"hi"`, `'c'`, `` `foo ``
+  | comment
+  | error      -- where the tokenizer gave up: from there to the end
+  deriving BEq, Repr, Inhabited
+
+-- A token of a line: its kind, and where it is, in characters (not bytes).
+structure Token where
+  start : Nat
+  stop : Nat
+  kind : TokenKind
+  deriving BEq, Repr, Inhabited
+
+-- Lean's own state for a REPL: the environment its lines are elaborated
+-- in, with the scopes they left open (`open`, `namespace`, `variable`).
+-- Opaque here, so that the pure modules needn't import Lean; the loop's
+-- side (LeanMachine/Eval.lean) knows what it is.
+opaque LeanStatePointed : NonemptyType
+def LeanState := LeanStatePointed.type
+instance : Nonempty LeanState := LeanStatePointed.property
+
+-- A REPL's Lean. A value: a line makes a new one and the old one is
+-- still there. It carries what a view or a step may ask of it, as pure
+-- functions that Eval.lean makes: a module can't name a function that a
+-- module it doesn't import defines, so they come with the value.
+structure Env where
+  state : LeanState
+  -- The tokens of a line, as this Lean's tokenizer reads them, in order.
+  tokens : String → Array Token
+  -- What an identifier being typed (`Nat.su`, `sq`) could become here,
+  -- in full and sorted: names of constants, in the namespaces open
+  -- here, and keywords.
+  complete : String → Array String
 
 -- What Lean said about a line.
 inductive Said where

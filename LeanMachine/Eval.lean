@@ -4,8 +4,9 @@ import LeanMachine.Safepoint
 
 /-! # Eval: Lean in the desktop's own process
 
-The only module that imports Lean. A REPL's `Env` is Lean's command
-state: the environment and the scopes its lines leave open. The desktop's
+The only module that imports Lean. A REPL's `Env` holds Lean's command
+state: the environment and the scopes its lines leave open, and the
+tokenizer and completion that read them. The desktop's
 own Lean imports Init and the desktop's modules once, in the background,
 with `LeanMachine` open; every REPL starts from it.
 
@@ -106,10 +107,191 @@ end
 -- safepoint cuts it off from here on (runs.cpp).
 @[extern "sv_finishing"] opaque finishing : IO Unit
 
-private unsafe def Env.ofStateImpl (s : Command.State) : Env := unsafeCast s
-@[implemented_by Env.ofStateImpl] opaque Env.ofState (s : Command.State) : Env
-private unsafe def Env.toStateImpl (e : Env) : Command.State := unsafeCast e
-@[implemented_by Env.toStateImpl] opaque Env.toState (e : Env) : Command.State
+-- The names completion offers from what the REPLs' Lean imports, by the
+-- namespace they're in: `Nat` ↦ `succ`, `add`, …; namespaces are names
+-- in the namespace around them. Made once, in a task of its own once the
+-- desktop's own Lean is imported, and shared by every REPL, as Lean's
+-- language server keeps the "eligible header declarations" once.
+-- Each name says whether it's a theorem's, which completion offers last.
+abbrev NameIndex := Std.HashMap Name (List (String × Bool))
+
+-- What a REPL's `LeanState` is: Lean's command state, and the index.
+structure Held where
+  cmd : Command.State
+  names : Task NameIndex
+  deriving Nonempty
+
+private unsafe def LeanState.ofHeldImpl (h : Held) : LeanState := unsafeCast h
+@[implemented_by LeanState.ofHeldImpl] opaque LeanState.ofHeld (h : Held) : LeanState
+private unsafe def LeanState.heldImpl (s : LeanState) : Held := unsafeCast s
+@[implemented_by LeanState.heldImpl] opaque LeanState.held (s : LeanState) : Held
+
+/-! ## Tokens and names, for highlighting and completion -/
+
+-- Can `s` be written as it is, as the last part of a name? (Not
+-- `«term_+_»`, not `_private`.)
+def isPlainName (s : String) : Bool :=
+  match s.toList with
+  | c :: cs => isIdFirst c && cs.all isIdRest
+  | [] => false
+
+-- A token that is a word, which Lean's editor highlights as a keyword:
+-- `def`, `s!`, `#eval`, not `:=` or `λ`.
+def isWord (tk : String) : Bool :=
+  match tk.toList with
+  | c :: cs => c.isAlpha || (c == '#' && (cs.head?.map Char.isAlpha).getD false)
+  | [] => false
+
+-- Does completion offer the constant `n`? Not what Lean's own completion
+-- leaves out (`Meta.allowCompletion`: auxiliary recursors, matchers,
+-- internal names), nor private names, nor names that need «».
+def offered (env : Environment) (n : Name) : Bool :=
+  match n with
+  | .str _ s => isPlainName s && !isPrivateName n && Meta.allowCompletion env n
+  | _ => false
+
+-- The index of the constants `env` imported.
+def nameIndex (env : Environment) : NameIndex := Id.run do
+  let mut index : NameIndex := {}
+  let mut spaces : Std.HashSet Name := {}
+  for (n, c) in env.constants.map₁ do
+    let .str p last := n | continue
+    unless offered env n do continue
+    index := index.insert p ((last, c matches .thmInfo _) :: index.getD p [])
+    -- The namespaces it's in, each once, unless a namespace is also a
+    -- constant (`Picture.brecOn`, whose equations are in it), which is
+    -- offered or not as a constant, as in Lean's own completion.
+    let mut ns := p
+    while !spaces.contains ns do
+      let .str q s := ns | break
+      spaces := spaces.insert ns
+      if isPlainName s && !env.contains ns then
+        index := index.insert q ((s, false) :: index.getD q [])
+      ns := q
+  return index
+
+open Parser in
+-- The tokens of `src` as Lean reads them in `cmd`, in order. Lean's
+-- tokenizer (`tokenFn`) reads one token at a time with the environment's
+-- token table, so notation defined in the REPL is read as the parser
+-- will read it, and skips the whitespace and comments after it: any
+-- stretch between tokens that isn't blank is a comment. An identifier is
+-- a constant if it resolves to one here, as the elaborator would resolve
+-- it. Where the tokenizer fails (an unterminated string, a character
+-- Lean doesn't know), the rest of the line is an error.
+def lexLine (cmd : Command.State) (table : TokenTable) (src : String) : Array Token := Id.run do
+  let ictx := mkInputContext src "<line>"
+  let scope := cmd.scopes.head!
+  let pmctx : ParserModuleContext :=
+    { env := cmd.env, options := scope.opts, currNamespace := scope.currNamespace,
+      openDecls := scope.openDecls }
+  let run (p : ParserFn) (s : ParserState) : ParserState := p.run ictx pmctx table s
+  let stop := src.rawEndPos
+  let range (stx : Syntax) : Option (String.Pos.Raw × String.Pos.Raw) :=
+    match stx.getHeadInfo with
+    | .original _ b _ e => some (b, e)
+    | _ => none
+  let kind : Syntax → TokenKind
+    | .atom _ v => if isWord v then .keyword else .symbol
+    | .ident _ _ n _ =>
+      if (ResolveName.resolveGlobalName cmd.env scope.opts scope.currNamespace
+            scope.openDecls n).isEmpty then .ident else .constant
+    | .node _ k _ => if k == numLitKind || k == scientificLitKind then .number else .string
+    | _ => .ident
+  -- Read the tokens, as byte ranges.
+  let mut found : Array (String.Pos.Raw × String.Pos.Raw × TokenKind) := #[]
+  let mut s := run whitespace (mkParserState src)
+  if s.hasError then
+    -- A comment at the start that never ends, or a tab.
+    let blank := (src.toList.takeWhile Char.isWhitespace).length
+    found := found.push (⟨blank⟩, stop, .error)
+  for _ in [0:src.length] do
+    if s.hasError || s.pos.byteIdx ≥ stop.byteIdx then break
+    let start := s.pos
+    s := run (tokenFn []) s
+    if s.hasError then
+      -- A token followed by a comment that never ends, or no token at all.
+      let at_ ← match (if s.stxStack.size > 0 then range s.stxStack.back else none) with
+        | some (b, e) => found := found.push (b, e, kind s.stxStack.back); pure e
+        | none => pure start
+      found := found.push (at_, stop, .error)
+      break
+    let stx := s.stxStack.back
+    s := s.popSyntax
+    let some (b, e) := range stx | continue
+    match stx with
+    | .atom _ "/--" | .atom _ "/-!" =>
+      -- A doc comment: the tokenizer reads only its start.
+      s := run (finishCommentBlock false 1) s
+      if s.hasError then found := found.push (b, stop, .error); break
+      found := found.push (b, s.pos, .comment)
+      s := run whitespace s
+    | _ => found := found.push (b, e, kind stx)
+  -- Byte positions to characters; the same when the line is ASCII.
+  let ascii := src.utf8ByteSize == src.length
+  let col (p : String.Pos.Raw) : Nat :=
+    if ascii then p.byteIdx else (String.Pos.Raw.extract src 0 p).length
+  let mut toks : Array Token := #[]
+  let mut last : String.Pos.Raw := 0
+  for (b, e, k) in found.push (stop, stop, .comment) do
+    let gap := (String.Pos.Raw.extract src last b).toList
+    let lead := (gap.takeWhile Char.isWhitespace).length
+    if lead < gap.length then
+      let trail := (gap.reverse.takeWhile Char.isWhitespace).length
+      toks := toks.push { start := col last + lead, stop := col b - trail, kind := .comment }
+    if b.byteIdx < e.byteIdx then toks := toks.push { start := col b, stop := col e, kind := k }
+    last := e
+  return toks
+
+-- What `word`, an identifier being typed, could become in `cmd`: `word`
+-- with its last part finished as a name in the namespace its other parts
+-- name, written from the current namespace, one around it, the root, or
+-- an open one, as Lean would resolve it. A protected name needs its
+-- namespace even when it's open. With no namespace, keywords too.
+-- Sorted, theorems after the rest: they outnumber definitions, and a
+-- line more often wants a definition.
+def completeIn (cmd : Command.State) (index : Task NameIndex) (table : Parser.TokenTable)
+    (word : String) : Array String := Id.run do
+  let parts := word.splitOn "."
+  let part := parts.getLastD ""
+  let qualText := String.ofList (word.toList.take (word.length - part.length))
+  let qual : Name := parts.dropLast.foldl Name.str Name.anonymous
+  let scope := cmd.scopes.head!
+  let env := cmd.env
+  let rec around : Name → List Name
+    | n@(.str p _) => n :: around p
+    | _ => []
+  let spaces : List (Name × Bool) :=
+    (around scope.currNamespace ++ [Name.anonymous]).map (·, false) ++
+    scope.openDecls.filterMap fun | .simple ns _ => some (ns, true) | _ => none
+  -- Each name, and whether it's a theorem's.
+  let mut out : Std.HashMap String Bool := {}
+  for (ns, opened) in spaces do
+    let space := ns ++ qual
+    let fits (last : String) : Bool :=
+      last.startsWith part &&
+      !(opened && qual.isAnonymous && isProtected env (.str space last))
+    for (last, thm) in index.get.getD space [] do
+      if fits last then out := out.insert (qualText ++ last) thm
+    -- What the REPL defined.
+    for (n, c) in env.constants.map₂ do
+      if let .str p last := n then
+        if p == space && fits last && offered env n then
+          out := out.insert (qualText ++ last) (c matches .thmInfo _)
+  if qual.isAnonymous then
+    for d in scope.openDecls do
+      if let .explicit (.str .anonymous s) _ := d then
+        if s.startsWith part then out := out.insert s false
+    if !part.isEmpty then
+      for tk in table.findPrefix part do
+        if isWord tk then out := out.insert tk false
+  return (out.toArray.qsort fun (a, t) (b, u) => (!t && u) || (t == u && a < b)).map (·.1)
+
+-- A REPL's Lean, with its tokenizer and completion.
+def Env.of (h : Held) : Env :=
+  let table := Parser.getTokenTable h.cmd.env
+  { state := .ofHeld h, tokens := lexLine h.cmd table,
+    complete := completeIn h.cmd h.names table }
 
 -- Parses and elaborates the commands in `ictx` one at a time, on this
 -- thread, from `ps` on, and returns the state after them, what they
@@ -145,19 +327,22 @@ def runCommands (s : Command.State) (src : String) (cancel : IO.CancelToken) :
     IO (Command.State × Array Message × Bool) :=
   elabCommands (Parser.mkInputContext src "<repl>") {} cancel s
 
--- The desktop's own Lean. `Elab.async` off keeps elaboration on the
--- calling thread; no info trees are kept, as nothing reads them.
-unsafe def importBase : IO Command.State := do
+-- The desktop's own Lean, and the index of the names it imported, which
+-- is ready a little later.
+-- `Elab.async` off keeps elaboration on the calling thread; no info trees
+-- are kept, as nothing reads them.
+unsafe def importBase : IO Held := do
   initSearchPath sysroot [(← IO.appDir) / ".." / "lib" / "lean"]
   enableInitializersExecution
   let env ← importModules (replImports.map ({ module := · })) {}
     (trustLevel := 1024) (loadExts := true)
   let opts := Elab.async.set {} false
   let s := { Command.mkState (withSafepoints env) {} opts with infoState.enabled := false }
-  return (← runCommands s "open LeanMachine" (← IO.CancelToken.new)).1
+  let cmd := (← runCommands s "open LeanMachine" (← IO.CancelToken.new)).1
+  return { cmd, names := Task.spawn fun _ => nameIndex env }
 
 -- Starts importing the desktop's own Lean, on a thread of its own.
-def startBase : BaseIO (Task (Except IO.Error Command.State)) :=
+def startBase : BaseIO (Task (Except IO.Error Held)) :=
   IO.asTask (prio := .dedicated) (unsafe importBase)
 
 -- What Lean said, in the order it said it. `shift` is how many
@@ -175,17 +360,18 @@ def saidOf (msgs : Array Message) (shift : Nat) : IO (List Said) :=
 -- that is a term is evaluated as `#eval` would; anything else is
 -- elaborated as commands. Once `cancel` is set, the line stops cleanly
 -- if Lean sees it: what Lean said, without the interruption itself.
-def eval (base : Task (Except IO.Error Command.State)) (src : String)
+def eval (base : Task (Except IO.Error Held)) (src : String)
     (env : Option Env) (cancel : IO.CancelToken) : IO Outcome := do
-  let s ← match env with
-    | some e => pure e.toState
+  let h ← match env with
+    | some e => pure e.state.held
     | none => IO.ofExcept (← IO.wait base)
+  let s := h.cmd
   let isTerm := (Parser.runParserCategory s.env `term src).isOk
   let pre := if isTerm then "#eval " else ""
   let (s, msgs, stopped) ← runCommands s (pre ++ src) cancel
   let said ← saidOf msgs pre.length
   if stopped then
     return .stopped (said.filter fun | .error e => !(e.splitOn stopDetails).length > 1 | _ => true) true
-  return .evaluated said (Env.ofState { s with traceState := {} })
+  return .evaluated said (Env.of { h with cmd := { s with traceState := {} } })
 
 end LeanMachine
