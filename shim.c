@@ -315,6 +315,12 @@ LEAN_EXPORT lean_obj_res sv_host_event(uint32_t timeout, lean_obj_arg io) {
         memcpy(&text, e + 24, sizeof text);
         return raw_event(6, SDL_GetModState(), 0, 0, text ? text : "");
       }
+      case 0x403: {                                                          // wheel
+        // y is steps away from the user, unless the direction (at 32) is
+        // flipped (1); the pointer is at mouse_x, mouse_y (36, 40).
+        float dy = f32_at(e, 28) * (u32_at(e, 32) == 1 ? -1 : 1);
+        return raw_event(8, f32_at(e, 36), f32_at(e, 40), dy, "");
+      }
       case SDL_EVENT_USER: return raw_event(7, 0, 0, 0, "");                // wake
       default: continue;
     }

@@ -56,6 +56,20 @@ definitions and open namespaces included (`Busy.al` → `Busy.alloc`,
 `monoAdv` → `monoAdvance`), as far as every name it could become
 agrees, and shows them under the line when there's more than one
 (`Picture.` shows its ten constructors).
+The Editor edits the desktop's own Lean files. It opens on a list of
+them: type part of a path to narrow it (`apps/cl`), Up and Down to
+choose, Enter or a click to open one. In a file, the arrows, Home, End,
+PageUp, PageDown, Ctrl+Home and Ctrl+End move the cursor, a click puts
+it where it lands, and the wheel scrolls; Backspace and Delete join
+lines at their ends, and Enter starts the new line as far in as the
+last, two more after `:=`, `do`, `where`, `=>`, `by`, `then` or
+`else`. The file is coloured
+as the REPL colours a line, with comments and strings that span lines
+(`/- … -/`, the module's doc comment) coloured as one. Tab completes the
+name before the cursor from the desktop's Lean (`TimeOfDay.` offers its
+fields), or indents. Ctrl+S saves (the title's `•` says there are
+changes not saved), Ctrl+O goes back to the list (twice, if there are
+changes not saved). Esc still quits the desktop, changes and all.
 Inspector and Notes are placeholders: click in one to drop a dot, or
 type into it to see the text and the last key, with its modifiers, that
 it heard. The bar at the bottom counts
@@ -99,6 +113,23 @@ compiled code ten times in the middle of `Ref.modify`, and ten times
 while it holds a mutex, with masking off and then on, and says how
 often the ref was left taken or the mutex locked.
 
+Between the REPL's highlighting and its runs, `--test` tries the
+editor. It prints the tokens of six lines of a file that leave a
+comment, a nested comment, a string and a doc comment open for the next
+line. An editor on its own, its requests answered at once, opens a
+scratch copy in `.lake/editor-test/`: it prints the file's lines, where
+each starts and what it leaves open, after `/- ` is typed at the top and
+after ` -/` closes it three lines down, after Enter and Backspace join
+and split lines, then saves (Ctrl+S) and prints what's on disk, and
+leaves with Ctrl+O, once with changes and then again. On the desktop it
+opens the Editor from the menu (`editor-files.png`), opens Clock.lean by
+typing `apps/cl`, and Tab after `TimeOfDay.` (`editor-complete.png`),
+then opens a comment at the top and turns the wheel
+(`editor-comment.png`). A press and the wheel move the cursor and the
+view of Editor.lean. Last, it times reading every line of Repl.lean, a
+keystroke in the middle of it, opening a comment at its top and closing
+it again, Down, and drawing an editor full of code.
+
 Needs Lean 4.36 through elan (`lean-toolchain` pins it), Cairo, SDL3's
 shared library, and a C++ compiler (`c++`). SDL3's headers
 (`libsdl3-dev`) are not needed. The desktop reads the .olean files of
@@ -109,8 +140,8 @@ installed.
 
 The Lean code is one module per file in `LeanMachine/`, in the
 `LeanMachine` namespace, with a thin `Main.lean` on top. `Picture`, `Key`,
-`App`, `Safepoint`, `Busy`, the apps in `Apps/`, `World`, `Desktop` and
-`View` are pure and import only each other. `Ambient` is what code in a
+`App`, `Safepoint`, `Busy`, `Text`, the apps in `Apps/`, `World`,
+`Desktop` and `View` are pure and import only each other. `Ambient` is what code in a
 run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
 `Eval` call C (and `Safepoint`'s safepoints, pure C functions, and
 `Main.lean`'s helpers for `--test`), only
@@ -138,16 +169,23 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   `Outcome` (a value; what Lean said, as `Said` messages, and the `Env`
   after the line; stopped, cleanly, with what Lean said first, or cut
   off; failed) comes back as an event with the tag and the milliseconds
-  the run took. An `Env`, a REPL's Lean, holds Lean's state, opaque
-  here, so the pure modules don't import Lean, and two pure functions
+  the run took. Files are requests too: `read` a file, `write` one,
+  `list` the files under a folder, by paths from the desktop's own
+  folder, with outcomes `read` (the text), `wrote` and `listed`. An
+  `Env`, a REPL's Lean, holds Lean's state, opaque
+  here, so the pure modules don't import Lean, and pure functions
   over it that Eval.lean makes: `tokens`, a line's `Token`s (where each
-  starts and stops, in characters, and its `TokenKind`), and
-  `complete`, what a name being typed could become.
+  starts and stops, in characters, and its `TokenKind`), `tokensFrom`,
+  the same for a line of a file that starts where a `Carry` says (in
+  code, a comment so deep, or a string) and where the next line starts,
+  and `complete`, what a name being typed could become.
   `App.asking` makes an app from a state of any type, a step and a view,
   and hides the state's type, so the desktop holds apps of every kind
-  in one list; `App.of` makes one that never asks. `AppEvent` is an
+  in one list, and can take the title from the state (`titleOf`);
+  `App.of` makes one that never asks. `AppEvent` is an
   event in the app's own coordinates, a key with its modifiers, typed
-  text, a tick with the `TimeOfDay`, or a run's outcome (`done`).
+  text, a turn of the wheel, a tick with the `TimeOfDay`, or a run's
+  outcome (`done`).
 - `Safepoint.lean`: what compiled code calls where a stop may reach it.
   `poll x` is `x`, a safepoint in C. `safepoint` and `interruptNow` are
   the calls the REPL's Lean puts at the start of every function it
@@ -164,6 +202,24 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   after Schevana's `apps/clock.ss`. `clockFace` is a pure function of the
   time and the size; the app keeps the last tick's time and changes only
   when the second does.
+- `Text.lean`: what the REPL and the editor share: `Line`, a line
+  being edited, as the characters before the cursor (nearest first)
+  and those after it; Tokyo Night's colours for tokens; rows of
+  coloured runs (`runRows`), a `mono` each; and what Tab offers
+  (`Offer`, `wordBefore`, `commonPrefix`), drawn in columns.
+- `Apps/Editor.lean`: an editor of the desktop's Lean files. Its file
+  is a `Buffer`: the lines above the cursor's (nearest first), the
+  cursor's `Line`, and the lines below. Each line is `Lexed`: its text,
+  its tokens, and where it and the next line start (`Carry`). An edit
+  reads the cursor's line again (`Buffer.relex`), and the lines below
+  only as far as they start differently now (`Buffer.again`). It asks
+  for the desktop's Lean and the list of files as it opens, as the REPL
+  asks for its Lean; opening and saving are `read` and `write`
+  requests, under a tag for each kind. `follow` keeps the cursor in
+  view; the step can't know the window's size, so it uses the size the
+  editor asks for (`editorSize`), as windows don't change size yet. The
+  title, from the state, is the file's name, with `•` when it has
+  changes not saved.
 - `Apps/Repl.lean`: a line editor over a transcript. A new REPL asks
   for the desktop's own Lean when it hears its first tick (an empty
   line evaluated there, under a tag of its own; again each second while
@@ -201,7 +257,8 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   events, keys and text included, to the focused window's app, moved
   into the app's coordinates; a run's outcome (`Event.done`) goes to the
   window that asked for it, and an app a run launched (`Event.launch`)
-  opens by that window. What apps ask for waits in the world's
+  opens by that window. The wheel goes to the window under the pointer,
+  focused or not. What apps ask for waits in the world's
   `outbox`, marked with the window, until the loop takes it
   (`takeAsked`). Ctrl+Shift+N opens the menu at the pointer.
   The world holds a `catalog` of apps, the menu's items, but knows none
@@ -212,7 +269,7 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   undo (Ctrl+Shift+Z) takes the previous one, apps' states included.
   The worlds kept for undo have empty outboxes, so undo never asks again.
   The start desktop opens the REPL, Clock, Inspector and Notes. Also `catalog`,
-  what the menu opens, and `start`, the desktop the program starts with,
+  what the menu opens (Clock, REPL, Editor, Inspector, Notes), and `start`, the desktop the program starts with,
   opened with `launch` as the menu would.
 - `View.lean`: `Desktop.view` returns a `Picture`. Each app's view is
   moved to its window's body and cut to it. The menu draws over
@@ -220,7 +277,8 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
 - `Host.lean`: the calls into `shim.c` (a canvas and one window),
   `Event.decode` for the events the shim hands back as a `RawEvent` (the
   right button is `Event.menu`; SDL's keycodes and modifier bits become a
-  `Key` and `Mods`), `Host.wake`, which any thread may call to end the
+  `Key` and `Mods`; the wheel brings the pointer's place and how far it
+  turned), `Host.wake`, which any thread may call to end the
   loop's wait, `localTime` (through Lean's `Std.Time`), and `render`,
   the only code that draws.
 - `Runs.lean`: the loop's side of requests. `Runs` is the runs going on:
@@ -229,7 +287,10 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   inside a guard (runs.cpp) and calls `Services.wake` when it ends, and
   the apps it launched. `handle` starts and stops runs (a new run with a tag still going replaces it;
   a stop with nothing to stop is answered at once), evaluating through
-  `Services.eval`, so this module needn't import Lean; `collect` turns
+  `Services.eval`, so this module needn't import Lean, and answers file
+  requests at once (`fileOutcome`), from `Services.root`: a write goes
+  beside the file and is renamed over it, and a listing walks the
+  folder (`walkDir`) past hidden folders; `collect` turns
   runs that ended into `Event.done` and `Event.launch`, and `keepFor`
   stops the runs of windows that are gone.
 - `Eval.lean`: Lean in the desktop. `startBase` imports the REPLs' Lean
@@ -254,15 +315,24 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   Lean's own (`withSafepoints`): `safepointsPass`, at the end of the
   compiler's impure phase, starts every function at a safepoint, and an
   IO function (`returnsIO`) at one that can return `interrupted`.
+  `lexFrom` is `tokensFrom`: a comment or string the line before left
+  open is read to its end by hand (`commentEnd`, `stringEnd`), the rest
+  by `lexLine`, and where the tokenizer gave up on a comment or string
+  this line leaves open (`openAt`), that's coloured as what it is and
+  carried to the next line. `projectRoot` is the desktop's own folder,
+  noted as this module compiles (`getFileName`: Lake passes Lean full
+  paths).
 - `Main.lean`: `run`, the loop. `feed` steps the desktop through events
   and hands what its apps ask to `Runs`, with the world they asked in. Each pass waits for events, but
   not past 100 ms or the next second (a run that ends wakes it), applies
   them, then the outcomes of runs that ended, stops the runs of windows
-  that are gone, ticks with the time, and draws. Also `test` and
-  `testRuns` and `testMasking` for `--test`, and `main`.
+  that are gone, ticks with the time, and draws. Also `test`,
+  `testLean`, `testEditor`, `testRuns` and `testMasking` for `--test`
+  (`answerNow` steps an app's state and answers what it asks at once),
+  and `main`.
 - `shim.c`: Cairo draws into an image in memory, and SDL3 shows it in
-  one window and hands back events, text input included, and a wake
-  (an SDL user event). No GPU in the design.
+  one window and hands back events, text input included, the wheel,
+  and a wake (an SDL user event). No GPU in the design.
 - `runs.cpp`: stopping a run. A run's thread is inside a guard
   (`sv_guarded` for a pure function, `sv_guarded_io` for an IO action)
   while it works; safepoints check its stop flag (a thread-local
@@ -652,6 +722,67 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   environment is persistent data, and the run's closure marked it
   multi-threaded when the run took it, so its reference counts change
   atomically.
+- **Comments and strings across lines.** Lean's tokenizer reads a
+  whole file as gladly as a line (`whitespace` skips comments across
+  line ends), but it can't start inside a comment or a string, and it
+  stops at its first error with no recovery, so a file read in one go
+  would turn red from its first stray character to its end. The editor
+  reads a line at a time, and carries from each line to the next where
+  it ended: in code, in a comment so many deep (they nest), or in a
+  string. What the line before left open is read to its end by hand,
+  and where the tokenizer gives up on a comment or string that doesn't
+  end on this line, the line ends inside it: about 40 lines of scanning
+  over characters. Raw strings (`r#"…"#`) that span lines aren't
+  carried.
+- **What a line of a file costs.** About 24 µs a line: all 258 lines of
+  Repl.lean in 6.1 ms, as a file opens or the desktop's Lean arrives. A
+  keystroke, the editor's step with its line read again, 77 µs; Down,
+  1.3 µs. An edit reads the lines below only while they start
+  differently than before, so `/-` typed at the top costs 0.26 ms (a
+  line inside a comment is only scanned for `-/`), and deleting its `/`
+  6 ms, every line read again by the tokenizer. That's on the main
+  thread, in the step: a file of 2,000 lines would take some 50 ms, a
+  dropped frame or three. Reading only the lines in view, and the rest
+  when they come into view, would bound it.
+- **A file as lists around the cursor.** As with the REPL's line, the
+  file is the lines above the cursor's (nearest first), the cursor's
+  line, and the lines below: an edit changes the cursor's line, Up and
+  Down move one line from one list to the other, and every world undo
+  keeps shares all the lines it didn't change. The view needs only the
+  lines in view, which `drop` and `take` find from the cursor's side.
+  Jumps (a click far off, Ctrl+End) walk a line at a time.
+- **Files as requests, answered at once.** Reading, writing and listing
+  files don't go on threads of their own, as runs do: a run can be cut
+  off at any safepoint, which includes every allocation, and a write cut
+  off midway would leave half a file. Files this size take well under a
+  millisecond, so the loop answers on its own thread, as it answers a
+  stop with nothing to stop. Lean's `IO.FS.writeFile` truncates and
+  writes, so a crash midway would also leave half a file; the loop
+  writes beside the file and renames it over (`IO.FS.rename`).
+  `System.FilePath.walkDir` lists a tree, with a function that says
+  which folders to go into. The desktop's folder is noted as Eval.lean
+  compiles, as the sysroot is: in a term elaborator, `getFileName` is
+  the module's full path, because Lake passes Lean full paths.
+- **An app doesn't know its size.** A view gets the window's size, but
+  a step doesn't, and the editor's step must keep the cursor in view as
+  it moves, so which line is at the top is state, and the step needs
+  to know how many lines fit. Windows don't change size yet, so the
+  editor uses the size it asks for. Once they do, apps will need to hear
+  their size as an event, as they hear the time.
+- **A title from the state.** `App.title` was a constant; an app made
+  with `App.asking` can now take it from its state (`titleOf`), so an
+  editor's window says which file it has, and whether it's saved.
+- **The wheel.** SDL3 gives the wheel in fractions of a step
+  (touchpads, fine wheels), with the pointer's place in the same event
+  and a flag for "natural" scrolling. The shim sends the fraction; the
+  editor adds fractions up until they make a line.
+- **A pattern variable can be a constructor.** In `match o with | .read
+  text => …`, written inside `namespace Event`, `text` was taken for the
+  constructor `Event.text`, and Lean said "Not enough arguments to
+  `text`": a name in a pattern is a variable only if no constructor of
+  that name is in scope. Apps have many constructors in scope
+  (`Picture.text`, `AppEvent.text`, `Event.text`), so pattern
+  variables want names that aren't theirs.
 
 ## Ideas for next
 
@@ -681,7 +812,14 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   worth returning to (Enter in a REPL, say).
 - Right-click for apps too, perhaps a window menu, now that the right
   button always opens the desktop's menu.
-- Resizing windows: an app's `view` already takes its size.
+- Resizing windows: an app's `view` already takes its size; its step
+  would need to hear it (the editor uses the size it asks for).
+- Reload an app from its file (step 7b): Ctrl+R in the editor, with
+  the REPLs' Lean no longer importing the apps, so that a file's
+  declarations don't clash with themselves.
+- The editor: read only the lines in view, and the rest later; select,
+  copy and paste; search; undo a keystroke at a time; open a file from
+  the REPL; warn before Esc quits with changes not saved.
 - Measure proportional text in the view, for layout that wraps (Notes).
   Monospace text can be measured already.
 - Display scaling and a resizable window.

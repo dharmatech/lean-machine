@@ -1,4 +1,4 @@
-import LeanMachine.App
+import LeanMachine.Text
 
 /-! # REPL: Lean, a line at a time
 
@@ -16,47 +16,6 @@ arithmetic on `monoAdvance`. -/
 
 namespace LeanMachine
 
-/-! ## The line being edited -/
-
--- The characters before the cursor, nearest first, and those after it.
--- Every edit takes or adds a character at the head of one of them.
-structure Line where
-  before : List Char := []
-  after : List Char := []
-  deriving Inhabited
-
-namespace Line
-
--- `s`, with the cursor at its end.
-def ofString (s : String) : Line := { before := s.toList.reverse }
-
-def chars (l : Line) : List Char := l.before.reverse ++ l.after
-def text (l : Line) : String := String.ofList l.chars
-
--- The cursor's column: how many characters are before it.
-def cursor (l : Line) : Nat := l.before.length
-
-def insert (l : Line) (s : String) : Line :=
-  { l with before := s.toList.reverse ++ l.before }
-
-def backspace (l : Line) : Line := { l with before := l.before.drop 1 }
-def delete (l : Line) : Line := { l with after := l.after.drop 1 }
-
-def left (l : Line) : Line :=
-  match l.before with
-  | c :: cs => { before := cs, after := c :: l.after }
-  | [] => l
-
-def right (l : Line) : Line :=
-  match l.after with
-  | c :: cs => { before := c :: l.before, after := cs }
-  | [] => l
-
-def toStart (l : Line) : Line := { before := [], after := l.chars }
-def toEnd (l : Line) : Line := { before := l.after.reverse ++ l.before, after := [] }
-
-end Line
-
 /-! ## The REPL -/
 
 inductive Entry where
@@ -68,12 +27,6 @@ inductive Entry where
   | warning (s : String)
   | error (s : String)
   deriving Repr
-
--- What Tab found for the name before the cursor: what it could become
--- (none: nothing here starts with it).
-structure Offer where
-  word : String
-  names : List String
 
 -- The run the REPL is waiting for.
 structure Waiting where
@@ -169,6 +122,7 @@ def ended (r : Repl) (tag : Nat) (o : Outcome) (ms : Nat) : Option Repl :=
       | .stopped said cleanly =>
         (said.map Said.entry ++ [.note (stoppedNote ms cleanly)], r.env)
       | .failed why => ([.error s!"failed: {why}"], r.env)
+      | .read _ | .wrote | .listed _ => ([], r.env)   -- the REPL asks for no files
     some { r with waiting := none, env, transcript := entries.reverse ++ r.transcript }
   | none => none
 
@@ -191,24 +145,8 @@ def editKey (r : Repl) : Key → Option Repl
   | .down => if r.back > 0 then some (r.goBack (r.back - 1)) else none
   | _ => none
 
--- The name before the cursor, as far back as there are characters a
--- name can have, dots included: `Nat.su` in `(Nat.su`. Empty unless it
--- starts the way a name does (not `.1`, `3.5` or `x.`'s field).
-def wordBefore (before : List Char) : String :=
-  match (before.takeWhile fun c => Lean.isIdRest c || c == '.').reverse with
-  | c :: cs => if Lean.isIdFirst c then String.ofList (c :: cs) else ""
-  | [] => ""
-
 -- Is the cursor in a string, a comment, or where the tokenizer gave up?
-def inText (r : Repl) : Bool :=
-  let at_ := r.line.cursor
-  r.tokens.any fun t =>
-    t.start < at_ && at_ ≤ t.stop && [.string, .comment, .error].contains t.kind
-
-def commonPrefix : List String → String
-  | [] => ""
-  | s :: rest => rest.foldl (init := s) fun a b =>
-      String.ofList (((a.toList.zip b.toList).takeWhile fun (x, y) => x == y).map (·.1))
+def inText (r : Repl) : Bool := LeanMachine.inText r.tokens r.line.cursor
 
 -- Tab: the name before the cursor, finished as far as every name it
 -- could become agrees, from the REPL's Lean. When it could become more
@@ -253,56 +191,6 @@ def replLineH : Float := 20
 def replPad : Float := 10
 def prompt : String := "> "
 def promptRgb : UInt32 := 0x7aa2f7
-def plainRgb : UInt32 := 0xc0caf5
-
--- Tokyo Night's colours for Lean's tokens.
-def TokenKind.rgb : TokenKind → UInt32
-  | .keyword => 0xbb9af7
-  | .symbol => 0x89ddff
-  | .constant => 0x7aa2f7
-  | .ident => plainRgb
-  | .number => 0xff9e64
-  | .string => 0x9ece6a
-  | .comment => 0x565f89
-  | .error => 0xf7768e
-
--- A stretch of a row in one colour, from column `col`. A row is a list
--- of them, each drawn as one `mono`.
-structure Run where
-  col : Nat
-  rgb : UInt32
-  text : String
-
-abbrev Row := List Run
-
--- Characters coloured one by one, in rows of `cols`: each row's runs of
--- one colour. A space goes in the run before it, whatever its colour (it
--- draws nothing), so a row has as few runs as it can. No characters is
--- one empty row.
-def runRows (cols : Nat) (cs : Array Char) (rgbs : Array UInt32) : List Row :=
-  (List.range (max 1 ((cs.size + cols - 1) / cols))).map fun i =>
-    let lo := i * cols
-    let runs := (List.range' lo (min cs.size (lo + cols) - lo)).foldl (init := ([] : List Run))
-      fun runs j =>
-        let c := cs[j]!
-        let rgb := rgbs[j]!
-        match runs with
-        | run :: rest =>
-          if c == ' ' || run.rgb == rgb then { run with text := run.text.push c } :: rest
-          else { col := j - lo, rgb, text := c.toString } :: runs
-        | [] => if c == ' ' then [] else [{ col := j - lo, rgb, text := c.toString }]
-    runs.reverse
-
--- `s`, which may span lines, in rows of `cols`, all in `rgb`.
-def lines (s : String) (rgb : UInt32) (cols : Nat) : List Row :=
-  (s.splitOn "\n").flatMap fun l =>
-    let cs := l.toList.toArray
-    runRows cols cs (Array.replicate cs.size rgb)
-
--- The colour of each of `n` characters: its token's, or plain.
-def tokenColours (n : Nat) (tokens : Array Token) : Array UInt32 :=
-  tokens.foldl (init := Array.replicate n plainRgb) fun a t =>
-    (List.range' t.start (min t.stop n - t.start)).foldl (fun a i => a.set! i t.kind.rgb) a
 
 -- The prompt, then a line coloured by its tokens, in rows of `cols`.
 def promptRows (cols : Nat) (s : String) (tokens : Array Token) : List Row :=
@@ -316,28 +204,6 @@ def Entry.rows (cols : Nat) : Entry → List Row
   | .note s => lines s 0x565f89 cols
   | .warning s => lines s 0xe0af68 cols
   | .error s => lines s 0xf7768e cols
-
--- What Tab offered, without the namespace typed before them (`map`,
--- not `List.map`), in at most `most` rows; if they don't fit, the last
--- row says how many more. As many columns as the names shown fit in,
--- each as wide as the longest of them.
-def Offer.rows (o : Offer) (cols : Nat) (most : Nat := 6) : List Row :=
-  if o.names.isEmpty then lines s!"nothing here starts with {o.word}" 0x565f89 cols else
-  let typed := (o.word.toList.reverse.dropWhile (· != '.')).length
-  let names := o.names.map fun n => String.ofList (n.toList.drop typed)
-  let width (per : Nat) : Nat :=
-    ((names.take (per * most)).foldl (fun m n => max m n.length) 0) + 2
-  let per := ((List.range (cols / 3)).reverse.find? fun i => (i + 1) * width (i + 1) ≤ cols + 2)
-    |>.map (· + 1) |>.getD 1
-  let w := width per
-  let rows := (names.length + per - 1) / per
-  let shown := if rows ≤ most then rows else most - 1
-  let row (i : Nat) : Row :=
-    ((names.drop (i * per)).take per).zipIdx.map fun (n, k) =>
-      { col := k * w, rgb := 0x9aa5ce, text := n }
-  (List.range shown).map row ++
-    (if rows ≤ most then []
-     else lines s!"… and {o.names.length - shown * per} more: type more of the name" 0x565f89 cols)
 
 -- The transcript, then a row that says a run is going, then the line
 -- being edited and the cursor in it, then what Tab offered. Long lines

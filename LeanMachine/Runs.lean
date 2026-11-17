@@ -39,6 +39,39 @@ structure Services where
   -- calling thread, until the token is set: what Lean said, and the Lean
   -- after it, or that it stopped.
   eval : String → Option Env → IO.CancelToken → IO Outcome
+  -- The desktop's own folder, where the paths of file requests start.
+  root : System.FilePath
+
+-- `act`'s outcome, or that it failed and why.
+def attempt (act : IO Outcome) : IO Outcome :=
+  try act catch e => return .failed (toString e)
+
+-- Is `p` a hidden file or folder (`.git`)?
+def hidden (p : System.FilePath) : Bool :=
+  match p.fileName with
+  | some n => n.startsWith "." && n != "." && n != ".."
+  | none => false
+
+-- A file request, done on this thread: what was read, written or
+-- found, or why it couldn't be. `none` for the other requests.
+def fileOutcome (root : System.FilePath) : Request → Option (IO Outcome)
+  | .read _ path => some <| attempt do return .read (← IO.FS.readFile (root / path))
+  | .write _ path text => some <| attempt do
+    -- Written beside it, then renamed over it, so that the file is
+    -- never half written, even if the desktop dies midway.
+    let p := root / path
+    let beside : System.FilePath := p.toString ++ ".saving"
+    IO.FS.writeFile beside text
+    IO.FS.rename beside p
+    return .wrote
+  | .list _ dir => some <| attempt do
+    let top := if dir.isEmpty || dir == "." then root else root / dir
+    let mut paths := #[]
+    for p in ← top.walkDir (fun p => return !hidden p) do
+      if !hidden p && !(← p.isDir) then
+        paths := paths.push (p.toString.drop (root.toString.length + 1)).toString
+    return .listed (paths.qsort (· < ·)).toList
+  | _ => none
 
 -- A run going on: the window and tag that asked for it, its flag and
 -- cancel token, its task, which ends with the outcome (`none`: cut off)
@@ -88,8 +121,9 @@ def Live.ended (l : Live) : IO (List Event) := do
 structure Runs where
   live : List Live := []
 
--- Does what a window's app asked, with `world` the world it asked in. A
--- stop with no run to stop is answered at once, so an app waiting for a
+-- Does what a window's app asked, with `world` the world it asked in.
+-- File requests are answered at once, on this thread. So is a stop with
+-- no run to stop, so an app waiting for a
 -- run that's gone (after an undo, say) hears that it stopped.
 def Runs.handle (rs : Runs) (svc : Services) (world : World) (a : Asked) :
     IO (Runs × List Event) := do
@@ -104,6 +138,10 @@ def Runs.handle (rs : Runs) (svc : Services) (world : World) (a : Asked) :
     start tag fun f _ _ => return (← guarded f work).map .value
   | .eval tag src env =>
     start tag fun f cancel ambient => guardedIO f ambient (svc.eval src env cancel)
+  | .read tag _ | .write tag _ _ | .list tag _ =>
+    let t0 ← IO.monoNanosNow
+    let o ← (fileOutcome svc.root a.request).getD (pure (.failed "not a file request"))
+    return (rs, [.done a.win tag o (((← IO.monoNanosNow) - t0) / 1000000)])
   | .stop tag =>
     match rs.live.find? (·.is a.win tag) with
     | some l => l.stop; return (rs, [])

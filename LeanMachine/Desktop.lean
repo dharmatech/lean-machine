@@ -2,6 +2,7 @@ import LeanMachine.World
 import LeanMachine.Apps.Placeholder
 import LeanMachine.Apps.Clock
 import LeanMachine.Apps.Repl
+import LeanMachine.Apps.Editor
 
 /-! # The desktop: the world now, and every world before it
 
@@ -43,7 +44,7 @@ def Desktop.takeAsked (d : Desktop) : Desktop × List Asked :=
 
 -- What the menu opens.
 def catalog : List App :=
-  [clock, repl, placeholder "Inspector", placeholder "Notes"]
+  [clock, repl, editor, placeholder "Inspector", placeholder "Notes"]
 
 -- The desktop the program starts with: four windows, opened as the menu
 -- opens them, each lower and to the right of the last, and no past.

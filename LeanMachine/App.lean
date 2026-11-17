@@ -41,6 +41,15 @@ structure Token where
   kind : TokenKind
   deriving BEq, Repr, Inhabited
 
+-- Where a line of a file starts, for Lean's tokenizer: in code, inside
+-- a block comment (`/- … -/`, nested `depth` deep), or inside a string.
+-- What the line before it left open.
+inductive Carry where
+  | code
+  | comment (depth : Nat)
+  | string
+  deriving BEq, Repr, Inhabited
+
 -- Lean's own state for a REPL: the environment its lines are elaborated
 -- in, with the scopes they left open (`open`, `namespace`, `variable`).
 -- Opaque here, so that the pure modules needn't import Lean; the loop's
@@ -57,6 +66,10 @@ structure Env where
   state : LeanState
   -- The tokens of a line, as this Lean's tokenizer reads them, in order.
   tokens : String → Array Token
+  -- The tokens of a line of a file that starts where `Carry` says, and
+  -- where the next line starts. A comment or a string left open at the
+  -- end of the line goes on in the next, instead of being an error.
+  tokensFrom : Carry → String → Array Token × Carry
   -- What an identifier being typed (`Nat.su`, `sq`) could become here,
   -- in full and sorted: names of constants, in the namespaces open
   -- here, and keywords.
@@ -78,6 +91,14 @@ inductive Request where
   -- (`none`: the desktop's own, Init and the desktop's modules).
   | eval (tag : Nat) (src : String) (env : Option Env)
   | stop (tag : Nat)                        -- stop that run at its next safepoint
+  -- Files, by their path from the desktop's own folder (where its
+  -- lakefile is). These are answered at once, not on a thread of their
+  -- own: a run can be cut off midway, and a write mustn't be.
+  | read (tag : Nat) (path : String)
+  | write (tag : Nat) (path text : String)   -- all of it, in place of what was there
+  -- The files under `dir`, at any depth, except in hidden folders
+  -- (`.lake`, `.git`), sorted.
+  | list (tag : Nat) (dir : String)
 
 -- How a run ended.
 inductive Outcome where
@@ -88,7 +109,10 @@ inductive Outcome where
   -- on the way unwound itself (`finally` ran), and `said` is what Lean
   -- said before it; otherwise a safepoint cut the run off.
   | stopped (said : List Said := []) (cleanly : Bool := false)
-  | failed (why : String)  -- it couldn't run
+  | failed (why : String)  -- it couldn't run, or a file couldn't be read or written
+  | read (text : String)   -- what the file had
+  | wrote                  -- the file has the text now
+  | listed (paths : List String)  -- from the desktop's folder
 
 -- An event as an app hears it. Positions are in the app's own coordinates:
 -- (0, 0) is the top left of its window's body.
@@ -100,6 +124,9 @@ inductive AppEvent where
   | text (s : String)      -- typed: a character, or what an input method made
   | tick (t : TimeOfDay)   -- many times a second, to every app
   | done (tag : Nat) (outcome : Outcome) (ms : Nat)  -- a run it asked for ended
+  -- The wheel turned with the pointer at (x, y): `dy` steps away from
+  -- the user (up the page), maybe a fraction of one, from a touchpad.
+  | wheel (x y dy : Float)
 
 -- `step` returns `none` when the event changes nothing and asks for
 -- nothing. It can't return an `App` every time: a type whose every value
@@ -116,13 +143,14 @@ instance : Inhabited App := ⟨{ title := "", view := fun _ _ => .group [] }⟩
 -- for then (`none`: no change and nothing asked), and how it looks. The
 -- state's type stays inside the app. Only this is `partial`; the functions
 -- an app passes it can be total.
+-- The title is `title`, unless `titleOf` says what it is in a state.
 partial def App.asking {σ : Type} (title : String) (s : σ)
     (step : σ → AppEvent → Option (σ × List Request))
     (view : σ → Float → Float → Picture)
-    (size : Float × Float := (414, 229)) : App :=
-  { title, view := view s, size,
+    (size : Float × Float := (414, 229)) (titleOf : σ → String := fun _ => title) : App :=
+  { title := titleOf s, view := view s, size,
     step := fun e => (step s e).map fun (s, asks) =>
-      (App.asking title s step view size, asks) }
+      (App.asking title s step view size titleOf, asks) }
 
 -- An app that never asks for anything: an event only changes its state
 -- (`none`: it doesn't).

@@ -31,6 +31,15 @@ elab "buildSysroot%" : term => do
 
 def sysroot : System.FilePath := buildSysroot%
 
+-- The desktop's own folder, where its lakefile is, read while this module
+-- was compiled (Lake hands Lean the module's full path): the paths of
+-- files that apps read and write start there.
+elab "sourceRoot%" : term => do
+  let file : System.FilePath := ← IO.FS.realPath (← getFileName)
+  return mkStrLit ((file.parent.bind (·.parent)).getD ".").toString
+
+def projectRoot : System.FilePath := sourceRoot%
+
 -- What the REPL's Lean imports: the desktop's pure modules, and what
 -- code in a run can reach.
 def replImports : Array Name :=
@@ -243,6 +252,84 @@ def lexLine (cmd : Command.State) (table : TokenTable) (src : String) : Array To
     last := e
   return toks
 
+/-! ## Lines of a file: comments and strings that go on -/
+
+-- Where a block comment `depth` deep ends, reading `cs` from `i`: just
+-- after its `-/`, or `none` and how deep it is where the line ends.
+-- Comments nest, as Lean's do.
+partial def commentEnd (cs : Array Char) (i depth : Nat) : Option Nat × Nat :=
+  if i + 1 < cs.size then
+    let c := cs[i]!
+    let d := cs[i + 1]!
+    if c == '-' && d == '/' then
+      if depth ≤ 1 then (some (i + 2), 0) else commentEnd cs (i + 2) (depth - 1)
+    else if c == '/' && d == '-' then commentEnd cs (i + 2) (depth + 1)
+    else commentEnd cs (i + 1) depth
+  else (none, depth)
+
+-- Where a string ends, reading `cs` from `i`, inside it: just after its
+-- closing `"`, or `none` if the line ends first. A backslash escapes the
+-- character after it; one at the end of the line goes on into the next,
+-- as Lean's string gaps do.
+partial def stringEnd (cs : Array Char) (i : Nat) : Option Nat :=
+  if i < cs.size then
+    match cs[i]! with
+    | '\\' => stringEnd cs (i + 2)
+    | '"' => some (i + 1)
+    | _ => stringEnd cs (i + 1)
+  else none
+
+-- Reading code in `cs` from `i`, past blanks and comments that end:
+-- where a comment or a string that the line leaves open starts, and
+-- what it leaves open. `none` if there's anything else first.
+partial def openAt (cs : Array Char) (i : Nat) : Option (Nat × Carry) :=
+  if i < cs.size then
+    let c := cs[i]!
+    if c.isWhitespace then openAt cs (i + 1)
+    else if c == '/' && cs[i + 1]? == some '-' then
+      match commentEnd cs (i + 2) 1 with
+      | (some e, _) => openAt cs e
+      | (none, d) => some (i, .comment d)
+    else if c == '"' then
+      match stringEnd cs (i + 1) with
+      | some _ => none
+      | none => some (i, .string)
+    else none
+  else none
+
+-- The tokens of a line of a file that starts where `carry` says, and
+-- where the next line starts. Lean's tokenizer can't start inside a
+-- comment or a string, so what the line before left open is read to its
+-- end here, and the rest of the line by `lexLine`. Where the tokenizer
+-- gave up on a comment or a string that doesn't end on this line, that
+-- goes on into the next, and is coloured as what it is.
+def lexFrom (cmd : Command.State) (table : Parser.TokenTable) (carry : Carry) (src : String) :
+    Array Token × Carry := Id.run do
+  let cs := src.toList.toArray
+  let n := cs.size
+  let whole (k : TokenKind) : Array Token := if n == 0 then #[] else #[⟨0, n, k⟩]
+  let (pre, start) : Array Token × Nat ← match carry with
+    | .code => pure (#[], 0)
+    | .comment d => match commentEnd cs 0 d with
+      | (none, d) => return (whole .comment, .comment d)
+      | (some e, _) => pure (#[⟨0, e, .comment⟩], e)
+    | .string => match stringEnd cs 0 with
+      | none => return (whole .string, .string)
+      | some e => pure (#[⟨0, e, .string⟩], e)
+  let rest := if start == 0 then src else String.ofList (cs.extract start n).toList
+  let toks := (lexLine cmd table rest).map fun t =>
+    { t with start := t.start + start, stop := t.stop + start }
+  let some last := toks.back? | return (pre, .code)
+  if last.kind != .error then return (pre ++ toks, .code)
+  let some (i, left) := openAt cs last.start | return (pre ++ toks, .code)
+  -- Comments that end, between the last token and the one left open.
+  let between := (List.range' last.start (i - last.start)).filter (!cs[·]!.isWhitespace)
+  let closed : Array Token := match between.head?, between.getLast? with
+    | some a, some b => #[⟨a, b + 1, .comment⟩]
+    | _, _ => #[]
+  let kind := if left == .string then TokenKind.string else .comment
+  return (pre ++ toks.pop ++ closed ++ #[⟨i, n, kind⟩], left)
+
 -- What `word`, an identifier being typed, could become in `cmd`: `word`
 -- with its last part finished as a name in the namespace its other parts
 -- name, written from the current namespace, one around it, the root, or
@@ -290,7 +377,7 @@ def completeIn (cmd : Command.State) (index : Task NameIndex) (table : Parser.To
 -- A REPL's Lean, with its tokenizer and completion.
 def Env.of (h : Held) : Env :=
   let table := Parser.getTokenTable h.cmd.env
-  { state := .ofHeld h, tokens := lexLine h.cmd table,
+  { state := .ofHeld h, tokens := lexLine h.cmd table, tokensFrom := lexFrom h.cmd table,
     complete := completeIn h.cmd h.names table }
 
 -- Parses and elaborates the commands in `ictx` one at a time, on this

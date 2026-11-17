@@ -28,6 +28,7 @@ inductive Event where
   | tick (t : TimeOfDay)      -- from the loop, not the host
   | done (win tag : Nat) (outcome : Outcome) (ms : Nat)  -- from the loop: a run ended
   | launch (win : Nat) (app : App)  -- from the loop: a run in window `win` opened `app`
+  | wheel (x y dy : Float)    -- dy steps away from the user, with the pointer at (x, y)
 
 structure Win where
   id : Nat
@@ -116,6 +117,7 @@ def Win.toApp (w : Win) : Event → Option AppEvent
   | .text s => some (.text s)
   | .tick t => some (.tick t)
   | .done _ tag o ms => some (.done tag o ms)
+  | .wheel x y dy => some (.wheel (x - w.bodyX) (y - w.bodyY) dy)
   | .menu .. | .launch .. | .quit => none
 
 -- The window after its app hears `e`, and what the app asked for.
@@ -193,6 +195,11 @@ def World.stepWindows (world : World) : Event → World
     if desktopKey 'n' k m then world.openMenu world.mouseX world.mouseY
     else world.toFocus (.key k m)
   | .text s => world.toFocus (.text s)
+  -- The wheel goes to the window under the pointer, focused or not.
+  | .wheel x y dy =>
+    match world.hit x y with
+    | some w => world.tell (·.id == w.id) (.wheel x y dy)
+    | none => world
   | .tick t => { world.toAll (.tick t) with time := t }
   | .done win tag o ms => world.tell (·.id == win) (.done win tag o ms)
   | .launch win app =>

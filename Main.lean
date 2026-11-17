@@ -120,10 +120,11 @@ partial def settle (svc : Services) (d : Desktop) (runs : Runs) (ms : Nat := 300
   IO.sleep 1
   settle svc d runs (ms - 1) seen
 
--- The REPL after `e`, with what it asks for worked out at once, on this
--- thread, outside any run.
-def hearNow (svc : Services) (r : Repl) (e : AppEvent) : IO Repl := do
-  match r.step e with
+-- An app's state after `e`, with what it asks for worked out at once, on
+-- this thread, outside any run.
+def answerNow {σ : Type} (svc : Services) (step : σ → AppEvent → Option (σ × List Request))
+    (r : σ) (e : AppEvent) : IO σ := do
+  match step r e with
   | none => return r
   | some (r, asks) => asks.foldlM (init := r) fun r a => do
     let answer : AppEvent ← match a with
@@ -131,7 +132,11 @@ def hearNow (svc : Services) (r : Repl) (e : AppEvent) : IO Repl := do
       | .eval tag src env => do
         pure (.done tag (← svc.eval src env (← IO.CancelToken.new)) 0)
       | .stop tag => pure (.done tag (.stopped [] false) 0)
-    return ((r.step answer).map (·.1)).getD r
+      | .read tag _ | .write tag _ _ | .list tag _ => do
+        pure (.done tag (← (fileOutcome svc.root a).getD (pure (.failed "?"))) 0)
+    return ((step r answer).map (·.1)).getD r
+
+def hearNow (svc : Services) : Repl → AppEvent → IO Repl := answerNow svc Repl.step
 
 -- The desktop after `e`, with the runs its apps ask for ended.
 def stepNow (svc : Services) (d : Desktop) (e : Event) : IO Desktop := do
@@ -153,7 +158,7 @@ def test (c : Canvas) (svc : Services) : IO Unit := do
                  .menu 600 450, item 600 450 0,     -- right-click, Clock
                  .motion 100 400,
                  .key (.char 'n') ctrlShift,        -- the menu here
-                 item 100 400 3,                    -- Notes
+                 item 100 400 4,                    -- Notes
                  dot,
                  -- Notes hears typing. A plain or shifted N types; only
                  -- Ctrl+Shift+N is the desktop's.
@@ -234,6 +239,9 @@ def LeanMachine.Request.show : Request → String
   | .run tag _ => s!"run {tag}"
   | .eval tag src _ => s!"eval {tag} {src.quote}"
   | .stop tag => s!"stop {tag}"
+  | .read tag path => s!"read {tag} {path}"
+  | .write tag path _ => s!"write {tag} {path}"
+  | .list tag dir => s!"list {tag} {dir}"
 
 def LeanMachine.Said.show : Said → String
   | .info s => s
@@ -249,6 +257,9 @@ def LeanMachine.Event.showDone : Event → String
         s!"stopped{if cleanly then " cleanly" else ""}\
           {if said.isEmpty then "" else s!", said {said.map Said.show}"}"
       | .failed why => s!"failed: {why}"
+      | .read s => s!"read {s.length} characters"
+      | .wrote => "wrote"
+      | .listed paths => s!"listed {paths.length} files"
     s!"window {win} run {tag}: {how}, {ms} ms"
   | .launch win app => s!"window {win} opened {app.title}"
   | _ => "another event"
@@ -573,19 +584,140 @@ def testLean (c : Canvas) (svc : Services) : IO Unit := do
     IO.println s!"  a REPL window {name}: {pic.monos} monos; the view in {viewUs} µs, \
       the view drawn in {us} µs"
 
+def LeanMachine.Carry.show : Carry → String
+  | .code => "code" | .comment d => s!"comment {d}" | .string => "string"
+
+-- A line of the editor's file, in short: where it starts, its tokens'
+-- kinds, and where the next starts.
+def showLexed (l : Lexed) : String :=
+  let kinds := l.tokens.toList.map (·.kind.show)
+  let kinds := kinds.foldr (init := []) fun k ks => if ks.head? == some k then ks else k :: ks
+  s!"{l.text.quote}: [{l.carryIn.show}] {" ".intercalate kinds} [→ {l.carry.show}]"
+
+def showFile (e : Editor) : IO Unit := do
+  let b := e.buffer
+  for l in b.above.reverse ++ b.current :: b.below do
+    IO.println s!"    {showLexed l}"
+
+-- The editor: lines read with what the line before left open, an editor
+-- alone on a scratch file (opening, comments across lines, Enter, joins,
+-- saving, leaving), then on the desktop with Clock.lean, and costs.
+def testEditor (c : Canvas) (svc : Services) : IO Unit := do
+  let r ← hearNow svc {} (.tick ⟨10, 8, 30⟩)
+  let some env := r.env | throw (IO.userError "the REPL didn't get its Lean")
+  IO.println "tokens of a file's lines, each starting where the one before left off:"
+  let file := ["def x := 1 /- a comment", "  that /- nests -/ and", "  ends -/ def y := \"a string",
+               "that ends\" ++ \"here\"", "/-- A doc comment", "-/ theorem t : True := trivial"]
+  let _ ← file.foldlM (init := Carry.code) fun c l => do
+    let (ts, c') := env.tokensFrom c l
+    IO.println s!"  [{c.show}] {showTokens l ts} [→ {c'.show}]"
+    return c'
+  -- The editor alone, its requests answered at once.
+  let key (k : Key) : AppEvent := .key k {}
+  let ctrl (ch : Char) : AppEvent := .key (.char ch) { ctrl := true }
+  let ed (e : Editor) (evs : List AppEvent) : IO Editor := evs.foldlM (answerNow svc Editor.heard) e
+  let dir := projectRoot / ".lake" / "editor-test"
+  IO.FS.createDirAll dir
+  IO.FS.writeFile (dir / "Scratch.lean") "def a := 1\ndef b := 2\ndef c := 3\n"
+  let path := ".lake/editor-test/Scratch.lean"
+  let e ← ed {} [.tick ⟨10, 8, 30⟩]
+  IO.println s!"the editor asks for its Lean ({e.env.isSome}) and the files: \
+    {e.files.size} Lean files, {e.files.toList.take 4}…"
+  -- Scratch.lean is in a hidden folder, so it isn't listed: the test lists it.
+  let e ← ed { e with files := #[path] } [key .enter]
+  IO.println s!"opened {e.title}: {e.buffer.count} lines, {e.note.quote}"
+  let e ← ed e [.text "/- "]
+  IO.println s!"  \"/- \" typed at the start: {e.title}"
+  showFile e
+  let e ← ed e [key .down, key .down, key .«end», .text " -/"]
+  IO.println "  \" -/\" at the end of the third line:"
+  showFile e
+  let e ← ed e [key .down, .text "def d :=", key .enter, .text "4", key .enter, key .backspace,
+    key .backspace, key .backspace, .text " -- the end"]
+  IO.println s!"  Enter after `:=`, then Enter and Backspaces: cursor at {e.buffer.row + 1}:{e.buffer.col + 1}"
+  showFile e
+  let e ← ed e [ctrl 's']
+  let disk ← IO.FS.readFile (dir / "Scratch.lean")
+  IO.println s!"  Ctrl+S: {e.title}, {e.note.quote}; on disk: {disk.quote}; \
+    left beside it: {← (dir / "Scratch.lean.saving").pathExists}"
+  let e ← ed e [key .home, key .backspace, ctrl 'o']
+  IO.println s!"  a change, then Ctrl+O: {e.title}, {e.note.quote}"
+  let e ← ed e [ctrl 'o']
+  IO.println s!"  Ctrl+O again: {e.title}, path {e.path}, {e.files.size} files listed again"
+  -- On the desktop: Editor from the menu, then Clock.lean, found by typing.
+  let item (x y : Float) (i : Nat) : Event := .press (x + 20) (Menu.itemY ⟨x, y⟩ i + itemH / 2)
+  let d ← [Event.menu 300 100, item 300 100 2].foldlM (stepNow svc) start
+  let title (d : Desktop) := (d.now.windows.find? (·.id == d.now.focus)).map (·.title)
+  IO.println s!"from the menu: {title d}"
+  render c d.view; c.savePng "editor-files.png"
+  let dkey (k : Key) : Event := .key k {}
+  let d ← [Event.text "apps/cl", dkey .enter].foldlM (stepNow svc) d
+  IO.println s!"\"apps/cl\", Enter: {title d}"
+  -- Line 16 is `def clockFace …`; a new line in it, and Tab.
+  let d ← ((List.replicate 16 (dkey .down)) ++ [dkey .«end», dkey .enter, .text "toward.",
+    dkey .backspace, .text " + TimeOfDay.", dkey .tab]).foldlM (stepNow svc) d
+  IO.println s!"Tab after `TimeOfDay.`: {title d}"
+  render c d.view; c.savePng "editor-complete.png"
+  -- A comment opened at the top runs to the end of the file; the wheel
+  -- scrolls down to show it.
+  let d ← [Event.key .home { ctrl := true }, .text "/- ", .wheel 600 300 (-3)].foldlM (stepNow svc) d
+  render c d.view; c.savePng "editor-comment.png"
+  -- The editor alone again: a press places the cursor, the wheel scrolls.
+  let e ← ed e [.text "apps/ed", key .enter]
+  let e ← ed e [.press (Editor.textX + monoAdvance edFont * 6 + 2) (edPad + 5)]
+  IO.println s!"{e.title}: a press by the left edge of row 1, column 7: cursor at \
+    {e.buffer.row + 1}:{e.buffer.col + 1}"
+  let e ← ed e [.wheel 100 100 (-2), .wheel 100 100 (-0.2), .wheel 100 100 (-0.2)]
+  IO.println s!"  the wheel down 2 steps, then two fifths: top line {e.top + 1}, cursor still at {e.buffer.row + 1}"
+  -- Costs, on Repl.lean.
+  IO.println "costs:"
+  let text ← IO.FS.readFile (projectRoot / "LeanMachine/Apps/Repl.lean")
+  let b := Buffer.ofText text
+  let lexAllUs ← usPer 20 fun i => do
+    if (Buffer.lexAll env (if i == 1000 then {} else b)).count == 0 then IO.println "?"
+  let opened := Editor.opened { env := some env } "Repl.lean" text 0
+  let middle := { opened with buffer := opened.buffer.goTo 120 4 }.follow
+  let keyUs ← usPer 2000 fun i => do
+    if let some (e', _) := middle.heard (.text (Char.ofNat (97 + i % 26)).toString) then
+      if e'.buffer.here.tokens.isEmpty then IO.println "?"
+  let atTop := { opened with buffer := opened.buffer.goTo 0 0 }
+  let commentUs ← usPer 20 fun i => do
+    if let some (e', _) := atTop.heard (.text (if i == 1000 then "x" else "/-")) then
+      if e'.buffer.below.getLast?.map (·.carry) == some .code then IO.println "?"
+  let commented := { atTop with buffer := Buffer.relex env { atTop.buffer with
+    line := atTop.buffer.line.insert "/-" |>.toStart } }
+  let uncommentUs ← usPer 20 fun i => do
+    if let some (e', _) := commented.heard (.key (if i == 1000 then .left else .delete) {}) then
+      if e'.buffer.below.getLast?.map (·.carry) != some .code then IO.println "?"
+  let downUs ← usPer 2000 fun i => do
+    if let some (e', _) := middle.heard (.key (if i == 100000 then .up else .down) {}) then
+      if e'.buffer.row == 0 then IO.println "?"
+  IO.println s!"  Repl.lean, {b.count} lines: read every line {lexAllUs} µs; a keystroke on \
+    line 121 (step and tokens) {keyUs} µs; \"/-\" typed at the top, every line below read \
+    again {commentUs} µs; that \"/\" deleted, every line read again {uncommentUs} µs; \
+    Down {downUs} µs"
+  let pic := middle.view editorSize.1 editorSize.2
+  let viewUs ← usPer 200 fun i => do
+    if (middle.view (editorSize.1 + (i % 2).toFloat) editorSize.2).monos == 0 then IO.println "?"
+  let drawUs ← usPer 200 fun i => do
+    render c (middle.view (editorSize.1 + (i % 2).toFloat) editorSize.2)
+  let frameUs ← usPer 50 fun _ => render c d.view
+  IO.println s!"  an editor full of code: {pic.monos} monos; the view in {viewUs} µs, drawn in \
+    {drawUs} µs; the desktop with it drawn in {frameUs} µs"
+
 def main (args : List String) : IO Unit := do
   let c ← Canvas.new screenW.toUInt32 screenH.toUInt32
   -- The REPLs' Lean is imported in the background; the first line waits
   -- for it.
   let t0 ← IO.monoNanosNow
   let base ← startBase
-  let svc : Services := { wake := Host.wake, eval := LeanMachine.eval base }
+  let svc : Services := { wake := Host.wake, eval := LeanMachine.eval base, root := projectRoot }
   match args with
   | ["--test"] =>
     let _ ← IO.wait base
     IO.println s!"the REPLs' Lean imported in {((← IO.monoNanosNow) - t0) / 1000000} ms, \
       RSS {← rssMB} MB"
-    test c svc; testLean c svc; testRuns c svc; testMasking
+    test c svc; testLean c svc; testEditor c svc; testRuns c svc; testMasking
   | ["--frames", n] =>
     Host.open "Lean Machine" screenW.toUInt32 screenH.toUInt32
     run c svc start {} n.toNat?

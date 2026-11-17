@@ -81,7 +81,8 @@ def Mods.ofSDL (bits : UInt32) : Mods :=
   { shift := bits &&& 0x3 != 0, ctrl := bits &&& 0xC0 != 0,
     alt := bits &&& 0x300 != 0 }
 
--- For a button, c is SDL's number for it: 1 left, 3 right. A key brings
+-- For a button, c is SDL's number for it: 1 left, 3 right; for the wheel,
+-- how far it turned. A key brings
 -- its code and modifiers in a and b; text, the modifiers held as it was
 -- typed. Text typed with Ctrl held is a command, not text: the key event
 -- that came with it carries it.
@@ -100,6 +101,7 @@ def Event.decode (r : RawEvent) : Option Event :=
   | 5 => some (.key (Key.ofSDL x.toUInt32) (Mods.ofSDL y.toUInt32))
   | 6 => if (Mods.ofSDL x.toUInt32).ctrl || r.text.isEmpty then none
          else some (.text r.text)
+  | 8 => some (.wheel x y button)   -- c is how far it turned
   | _ => none   -- 7 is a wake (`Host.wake`): the loop goes on
 
 -- Runs `act`, then puts back the canvas's origin and clip as they were.
