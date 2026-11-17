@@ -1,5 +1,6 @@
--- Builds the `desktop` executable from the Lean code and shim.c. Needs Lean
--- (elan), Cairo and SDL3's shared library; SDL3's headers aren't needed.
+-- Builds the `desktop` executable from the Lean code, shim.c and runs.cpp.
+-- Needs Lean (elan), Cairo, SDL3's shared library and a C++ compiler; SDL3's
+-- headers aren't needed.
 import Lake
 open Lake DSL System
 
@@ -22,6 +23,15 @@ target shim pkg : FilePath := do
   buildO (pkg.buildDir / "c" / "shim.o") src includes #["-O2", "-fPIC"] "cc"
     getLeanTrace
 
+/-- runs.cpp, the guard that stops a run, compiled with the system's `c++`.
+It uses no C++ library, only exceptions, which Lean's own C++ runtime
+handles when it links. -/
+target runs pkg : FilePath := do
+  let src ← inputTextFile (pkg.dir / "runs.cpp")
+  buildO (pkg.buildDir / "c" / "runs.o") src
+    #["-I", (← getLeanIncludeDir).toString] #["-O2", "-fPIC", "-std=c++17"] "c++"
+    getLeanTrace
+
 /-- The modules under LeanMachine/, which Main.lean imports. -/
 lean_lib LeanMachine where
   globs := #[.submodules `LeanMachine]
@@ -29,11 +39,13 @@ lean_lib LeanMachine where
 @[default_target]
 lean_exe desktop where
   root := `Main
-  moreLinkObjs := #[shim]
+  moreLinkObjs := #[shim, runs]
   -- Lean links against its own C library. Name each system library by its
   -- full path: an `-L` to their directory pulls in the system's start files
-  -- and the link fails.
+  -- and the link fails. Every small allocation in Lean code goes through
+  -- runs.cpp's safepoint first.
   moreLinkArgs := run_io do
     let lib := (← pkgConfig #["--variable=libdir", "cairo"])[0]!
     return #[s!"{lib}/libcairo.so.2", s!"{lib}/libSDL3.so.0",
-             "-Wl,--allow-shlib-undefined"]
+             "-Wl,--allow-shlib-undefined",
+             "-Wl,--wrap=lean_alloc_small_object_core"]

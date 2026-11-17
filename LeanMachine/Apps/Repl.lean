@@ -1,12 +1,15 @@
 import LeanMachine.App
+import LeanMachine.Busy
 
 /-! # REPL: a line editor over a transcript
 
-For now it echoes: Enter adds the line, and an echo of it, to the
-transcript, and Up and Down recall earlier lines. Pure, no threads; it
-will evaluate Lean once the desktop can run work in the background.
-Everything is monospace, so where a character or the cursor goes is
-arithmetic on `monoAdvance`. -/
+Enter asks the loop to run the line, on a thread of its own, and the
+outcome goes in the transcript when it comes back. The line can be edited
+meanwhile, and Ctrl+C stops the run. Until Lean is linked, a line runs as
+busy work (`alloc 100` and the like) or comes back as it went. Up and
+Down recall earlier lines. Pure: the REPL only asks. Everything is
+monospace, so where a character or the cursor goes is arithmetic on
+`monoAdvance`. -/
 
 namespace LeanMachine
 
@@ -59,27 +62,81 @@ inductive Entry where
   | output (s : String)   -- what came back; it may span lines
   deriving Repr
 
+-- The run the REPL is waiting for.
+structure Waiting where
+  tag : Nat
+  stopping : Bool := false   -- Ctrl+C asked it to stop
+  deriving Inhabited
+
 structure Repl where
   line : Line := {}
   transcript : List Entry := []   -- newest first
   history : List String := []     -- lines entered, newest first
   back : Nat := 0                 -- how far back in the history the line is
   draft : String := ""            -- the line being typed, kept while Up goes back
+  waiting : Option Waiting := none
+  nextTag : Nat := 0
   deriving Inhabited
+
+-- What a line runs, until Lean is linked: busy work by name, `n` million
+-- steps of it, or the line itself, which comes back as it went.
+def busyWork (line : String) : Unit → String :=
+  match (line.splitOn " ").filter (· != "") with
+  | [w, n] =>
+    match n.toNat? with
+    | some n =>
+      if w == "alloc" then fun _ => toString (Busy.alloc n)
+      else if w == "poll" then fun _ => toString (Busy.polled n)
+      else if w == "spin" then fun _ => toString (Busy.spin n)
+      else fun _ => line
+    | none => fun _ => line
+  | _ => fun _ => line
 
 namespace Repl
 
 def edit (r : Repl) (f : Line → Line) : Repl := { r with line := f r.line }
 
--- The line and its echo go to the transcript, and the line to the
--- history, unless it's empty or the same as the last one.
-def enter (r : Repl) : Repl :=
+-- The line goes to the transcript and to the history, unless it's empty
+-- or the same as the last one, and the REPL asks for it to be run. While
+-- a run is going, Enter does nothing.
+def enter (r : Repl) : Option (Repl × List Request) :=
+  if r.waiting.isSome then none else
   let s := r.line.text
-  let echo := if s.isEmpty then [] else [Entry.output s]
-  { r with line := {}, back := 0, draft := "",
-           transcript := echo ++ .input s :: r.transcript,
-           history := if s.isEmpty || r.history.head? == some s then r.history
-                      else s :: r.history }
+  let r := { r with line := {}, back := 0, draft := "",
+                    transcript := .input s :: r.transcript,
+                    history := if s.isEmpty || r.history.head? == some s then r.history
+                               else s :: r.history }
+  if s.isEmpty then some (r, [])
+  else some ({ r with waiting := some { tag := r.nextTag }, nextTag := r.nextTag + 1 },
+             [.run r.nextTag (busyWork s)])
+
+-- Ctrl+C: stops the run, or with none going, clears the line.
+def interrupt (r : Repl) : Option (Repl × List Request) :=
+  match r.waiting with
+  | some w => some ({ r with waiting := some { w with stopping := true } }, [.stop w.tag])
+  | none => some ({ r with line := {}, back := 0, draft := "" }, [])
+
+def took (ms : Nat) : String :=
+  if ms < 1000 then s!"{ms} ms"
+  else s!"{ms / 1000}.{(ms % 1000) / 100} s"
+
+-- The outcome of the run the REPL is waiting for goes in the transcript.
+-- Outcomes of other runs (from before an undo, say) don't matter to it.
+def ended (r : Repl) (tag : Nat) (o : Outcome) (ms : Nat) : Option Repl :=
+  match r.waiting with
+  | some w =>
+    if w.tag != tag then none else
+    -- In the order they're read.
+    let entries : List Entry := match o with
+      | .value s =>
+        .output s ::
+        (if w.stopping then [.note "it didn't stop: nothing on its way was a safepoint"]
+         else []) ++
+        (if ms ≥ 100 then [.note s!"took {took ms}"] else [])
+      | .stopped => [.note (if ms == 0 then "stopped" else s!"stopped after {took ms}")]
+      | .failed why => [.note s!"failed: {why}"]
+    some { r with waiting := none, transcript := entries.reverse ++ r.transcript }
+  | none => none
 
 -- The line `n` back in the history; 0 is the line that was being typed.
 def goBack (r : Repl) (n : Nat) : Repl :=
@@ -87,22 +144,26 @@ def goBack (r : Repl) (n : Nat) : Repl :=
   let text := if n == 0 then draft else r.history.getD (n - 1) ""
   { r with back := n, draft, line := .ofString text }
 
--- Modifiers don't matter yet: Ctrl+Left is Left.
-def step (r : Repl) : AppEvent → Option Repl
-  | .text s => some (r.edit (·.insert s))
-  | .key k _ =>
-    match k with
-    | .enter => some r.enter
-    | .backspace => some (r.edit Line.backspace)
-    | .delete => some (r.edit Line.delete)
-    | .left => some (r.edit Line.left)
-    | .right => some (r.edit Line.right)
-    | .home => some (r.edit Line.toStart)
-    | .«end» => some (r.edit Line.toEnd)
-    | .up => if r.back < r.history.length then some (r.goBack (r.back + 1))
-             else none
-    | .down => if r.back > 0 then some (r.goBack (r.back - 1)) else none
-    | _ => none
+-- Edits that ask for nothing.
+def editKey (r : Repl) : Key → Option Repl
+  | .backspace => some (r.edit Line.backspace)
+  | .delete => some (r.edit Line.delete)
+  | .left => some (r.edit Line.left)
+  | .right => some (r.edit Line.right)
+  | .home => some (r.edit Line.toStart)
+  | .«end» => some (r.edit Line.toEnd)
+  | .up => if r.back < r.history.length then some (r.goBack (r.back + 1))
+           else none
+  | .down => if r.back > 0 then some (r.goBack (r.back - 1)) else none
+  | _ => none
+
+-- Other modifiers don't matter yet: Ctrl+Left is Left.
+def step (r : Repl) : AppEvent → Option (Repl × List Request)
+  | .text s => some (r.edit (·.insert s), [])
+  | .key .enter _ => r.enter
+  | .key (.char 'c') m => if m == { ctrl := true } then r.interrupt else none
+  | .key k _ => (r.editKey k).map (·, [])
+  | .done tag o ms => (r.ended tag o ms).map (·, [])
   | _ => none
 
 end Repl
@@ -141,9 +202,9 @@ def Entry.rows (cols : Nat) : Entry → List Row
   | .note s => (cut cols s.toList).map fun row =>
       { text := String.ofList row, rgb := 0x565f89 }
 
--- The transcript, then the line being edited and the cursor in it. Long
--- lines wrap. When it all doesn't fit, the oldest rows go off the top,
--- so the newest stay in view.
+-- The transcript, then a row that says a run is going, then the line
+-- being edited and the cursor in it. Long lines wrap. When it all doesn't
+-- fit, the oldest rows go off the top, so the newest stay in view.
 def Repl.view (r : Repl) (w h : Float) : Picture :=
   let adv := monoAdvance replFont
   let cols := max 4 ((w - 2 * replPad) / adv).floor.toUInt64.toNat
@@ -155,6 +216,11 @@ def Repl.view (r : Repl) (w h : Float) : Picture :=
   let editing :=
     if p / cols < editing.length then editing
     else editing ++ [{ text := "", rgb := 0 }]
+  let status : List Row := match r.waiting with
+    | some w => (cut cols (if w.stopping then "stopping…".toList
+                           else "running… Ctrl+C stops it".toList)).map fun row =>
+        { text := String.ofList row, rgb := 0xe0af68 }
+    | none => []
   -- Only the newest entries are cut into rows: enough to fill the view.
   let rec newest (es : List Entry) (rows : List Row) (n : Nat) : List Row :=
     match es with
@@ -164,7 +230,7 @@ def Repl.view (r : Repl) (w h : Float) : Picture :=
         let rs := e.rows cols
         newest rest (rs ++ rows) (n + rs.length)
     | [] => rows
-  let all := newest r.transcript editing editing.length
+  let all := newest r.transcript (status ++ editing) (status.length + editing.length)
   let gone := all.length - fits
   let rows := all.drop gone
   let cursorRow := all.length - editing.length + p / cols - gone
@@ -177,8 +243,11 @@ def Repl.view (r : Repl) (w h : Float) : Picture :=
        2 (replLineH - 4) 0 0xbb9af7])
 
 def repl : App :=
-  App.of "REPL"
-    ({ transcript := [.note "Echoes what you enter, for now. Up, Down: history."] } : Repl)
+  App.asking "REPL"
+    ({ transcript := [.note "No Lean yet. Enter runs a line on a thread of its own. \
+         Busy work, seconds of it: alloc 100, poll 1000, spin 1000 (millions of \
+         steps). Anything else comes back as it went. Ctrl+C stops a run. \
+         Up, Down: history."] } : Repl)
     Repl.step Repl.view (size := (560, 300))
 
 end LeanMachine

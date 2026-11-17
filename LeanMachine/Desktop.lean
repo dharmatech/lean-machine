@@ -14,9 +14,11 @@ structure Desktop where
   past : List World
 
 -- `next`, as a step undo can return from. The world kept for undo has
--- its menu closed, so undo never brings a menu back.
+-- its menu closed, so undo never brings a menu back, and no requests, so
+-- undo never asks again.
 def Desktop.commit (d : Desktop) (next : World) : Desktop :=
-  { now := next, past := ({ d.now with menu := none } :: d.past).take 500 }
+  { now := next,
+    past := ({ d.now with menu := none, outbox := [] } :: d.past).take 500 }
 
 def Desktop.undo (d : Desktop) : Desktop :=
   match d.past with
@@ -33,6 +35,11 @@ def Desktop.step (d : Desktop) (e : Event) : Desktop :=
   | _ =>
     let next := d.now.step e
     if d.now.commits e then d.commit next else { d with now := next }
+
+-- What the apps asked for, oldest first, and the desktop without it.
+def Desktop.takeAsked (d : Desktop) : Desktop × List Asked :=
+  let (now, asked) := d.now.takeAsked
+  ({ d with now }, asked)
 
 -- What the menu opens.
 def catalog : List App :=

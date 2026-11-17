@@ -42,6 +42,9 @@ instance : Nonempty Canvas := CanvasPointed.property
 @[extern "sv_host_open"] opaque Host.open (title : @& String)
   (w h : UInt32) : IO Unit
 @[extern "sv_host_present"] opaque Host.present (c : @& Canvas) : IO Unit
+-- Ends the loop's wait for events. Any thread may call it: a run calls it
+-- when it ends. Does nothing before `Host.open`.
+@[extern "sv_host_wake"] opaque Host.wake : IO Unit
 -- An event as `sv_host_event` in shim.c hands it back: numbers
 -- [kind, a, b, c], and the text of a text event (empty for the others).
 -- Text can't travel in a `FloatArray`, and two fields keep one call per
@@ -97,7 +100,7 @@ def Event.decode (r : RawEvent) : Option Event :=
   | 5 => some (.key (Key.ofSDL x.toUInt32) (Mods.ofSDL y.toUInt32))
   | 6 => if (Mods.ofSDL x.toUInt32).ctrl || r.text.isEmpty then none
          else some (.text r.text)
-  | _ => none
+  | _ => none   -- 7 is a wake (`Host.wake`): the loop goes on
 
 -- Runs `act`, then puts back the canvas's origin and clip as they were.
 def Canvas.saved (c : Canvas) (act : IO Unit) : IO Unit := do

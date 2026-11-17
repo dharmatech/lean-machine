@@ -5,7 +5,9 @@ import LeanMachine.App
 Pure: `World.step` makes a new world and changes nothing. Each window
 holds an app. The world drags, raises and closes windows, opens apps from
 its menu, passes ticks to every app, and passes other events, keys and
-text included, to the focused window's app. -/
+text included, to the focused window's app. What apps ask for waits in
+the world's outbox, marked with the window that asked, until the loop
+takes it; the outcome of a run goes back to that window. -/
 
 namespace LeanMachine
 
@@ -24,6 +26,7 @@ inductive Event where
   | key (k : Key) (mods : Mods)
   | text (s : String)
   | tick (t : TimeOfDay)      -- from the loop, not the host
+  | done (win tag : Nat) (outcome : Outcome) (ms : Nat)  -- from the loop: a run ended
 
 structure Win where
   id : Nat
@@ -35,6 +38,11 @@ structure Win where
   deriving Inhabited
 
 def Win.title (w : Win) : String := w.app.title
+
+-- A request, and the window whose app made it.
+structure Asked where
+  win : Nat
+  request : Request
 
 -- The body: the part below the title, where the app draws.
 def Win.bodyX (w : Win) : Float := w.x + frame
@@ -72,6 +80,7 @@ structure World where
   nextId : Nat
   mouseX : Float
   mouseY : Float
+  outbox : List Asked := []  -- what apps asked for, newest first
 
 def World.menuH (world : World) : Float :=
   menuHeadH + itemH * world.catalog.length.toFloat + 6
@@ -97,21 +106,22 @@ def Win.inBody (w : Win) (x y : Float) : Bool :=
 
 def Win.moveTo (w : Win) (x y : Float) : Win := { w with x := x, y := y }
 
--- The window after its app hears `e`, moved into the app's coordinates.
-def Win.hear (w : Win) (e : Event) : Win :=
-  let dx := w.bodyX
-  let dy := w.bodyY
-  let heard : Option AppEvent := match e with
-    | .press x y => some (.press (x - dx) (y - dy))
-    | .release x y => some (.release (x - dx) (y - dy))
-    | .motion x y => some (.motion (x - dx) (y - dy))
-    | .key k m => some (.key k m)
-    | .text s => some (.text s)
-    | .tick t => some (.tick t)
-    | .menu .. | .quit => none
-  match heard.bind w.app.step with
-  | some app => { w with app }
-  | none => w
+-- `e` as the window's app hears it, moved into the app's coordinates.
+def Win.toApp (w : Win) : Event → Option AppEvent
+  | .press x y => some (.press (x - w.bodyX) (y - w.bodyY))
+  | .release x y => some (.release (x - w.bodyX) (y - w.bodyY))
+  | .motion x y => some (.motion (x - w.bodyX) (y - w.bodyY))
+  | .key k m => some (.key k m)
+  | .text s => some (.text s)
+  | .tick t => some (.tick t)
+  | .done _ tag o ms => some (.done tag o ms)
+  | .menu .. | .quit => none
+
+-- The window after its app hears `e`, and what the app asked for.
+def Win.hear (w : Win) (e : Event) : Win × List Asked :=
+  match (w.toApp e).bind w.app.step with
+  | some (app, asks) => ({ w with app }, asks.map (⟨w.id, ·⟩))
+  | none => (w, [])
 
 def World.hit (world : World) (x y : Float) : Option Win :=
   world.windows.reverse.find? (·.contains x y)
@@ -119,28 +129,33 @@ def World.hit (world : World) (x y : Float) : Option Win :=
 def World.raise (world : World) (w : Win) : List Win :=
   world.windows.filter (·.id != w.id) ++ [w]
 
--- The world after the focused window's app hears `e`.
-def World.toFocus (world : World) (e : Event) : World :=
-  { world with windows := world.windows.map fun w =>
-      if w.id == world.focus then w.hear e else w }
+-- The world after the apps of the windows `pick` chooses hear `e`, with
+-- what they asked for in the outbox.
+def World.tell (world : World) (pick : Win → Bool) (e : Event) : World :=
+  let (windows, asked) := (world.windows.map fun w =>
+    if pick w then w.hear e else (w, [])).unzip
+  { world with windows, outbox := asked.flatten.reverse ++ world.outbox }
 
--- The world after every window's app hears `e`.
+def World.toFocus (world : World) (e : Event) : World :=
+  world.tell (·.id == world.focus) e
+
 def World.toAll (world : World) (e : Event) : World :=
-  { world with windows := world.windows.map (·.hear e) }
+  world.tell (fun _ => true) e
 
 -- A new window holding `app`, with its corner at (x, y) or as near as
 -- keeps it on the screen, in front and focused. The app hears the time
 -- first, so a clock is right from its first frame.
 def World.launch (world : World) (app : App) (x y : Float) : World :=
   let n := world.nextId
-  let app := (app.step (.tick world.time)).getD app
+  let (app, asks) := (app.step (.tick world.time)).getD (app, [])
   let w := app.size.1 + 2 * frame
   let h := app.size.2 + titleH + frame
   let win : Win := { id := n, app, w, h,
                      x := max 0 (min x (screenW - w)),
                      y := max 0 (min y (screenH - barH - h)) }
   { world with windows := world.windows ++ [win], focus := n,
-               nextId := n + 1 }
+               nextId := n + 1,
+               outbox := (asks.map (⟨n, ·⟩)).reverse ++ world.outbox }
 
 -- The menu, open at (x, y) or as near as keeps it on the screen.
 def World.openMenu (world : World) (x y : Float) : World :=
@@ -178,6 +193,7 @@ def World.stepWindows (world : World) : Event → World
     else world.toFocus (.key k m)
   | .text s => world.toFocus (.text s)
   | .tick t => { world.toAll (.tick t) with time := t }
+  | .done win tag o ms => world.tell (·.id == win) (.done win tag o ms)
   | .quit => world
 
 -- With the menu open, a press on an item opens its app where the menu
@@ -192,6 +208,11 @@ def World.step (world : World) (e : Event) : World :=
     | none => world
   | some _, .key .escape _ => { world with menu := none }
   | _, _ => world.stepWindows e
+
+-- What the apps asked for, oldest first, and the world with its outbox
+-- emptied.
+def World.takeAsked (world : World) : World × List Asked :=
+  ({ world with outbox := [] }, world.outbox.reverse)
 
 -- Whether `e` starts a step undo can return to. A press does, unless it
 -- only closes the menu; nothing else does.

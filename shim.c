@@ -220,11 +220,14 @@ extern bool SDL_PollEvent(void *event);
 extern const char *SDL_GetError(void);
 extern bool SDL_StartTextInput(SDL_Window *win);
 extern uint16_t SDL_GetModState(void);
+extern bool SDL_PushEvent(void *event);
 
 #define SDL_INIT_VIDEO 0x20u
 #define SDL_PIXELFORMAT_ARGB8888 0x16362004u   // Cairo's ARGB32, same bytes
 #define SDL_TEXTUREACCESS_STREAMING 1
+#define SDL_EVENT_USER 0x8000u
 
+static bool host_opened = false;
 static SDL_Renderer *host_renderer = NULL;
 static SDL_Texture *host_texture = NULL;
 
@@ -245,6 +248,20 @@ LEAN_EXPORT lean_obj_res sv_host_open(b_lean_obj_arg title, uint32_t w,
   if (!host_texture) return sdl_error();
   // Without this SDL sends keys but no text.
   SDL_StartTextInput(win);
+  host_opened = true;
+  return unit();
+}
+
+// Wakes the loop from `sv_host_event`'s wait: a run that finishes calls it
+// from its own thread (SDL_PushEvent may be called from any thread). Does
+// nothing before the window opens, as in `--test`.
+LEAN_EXPORT lean_obj_res sv_host_wake(lean_obj_arg io) {
+  if (host_opened) {
+    uint64_t buf[16] = {0};
+    uint32_t type = SDL_EVENT_USER;
+    memcpy(buf, &type, sizeof type);
+    SDL_PushEvent(buf);
+  }
   return unit();
 }
 
@@ -275,10 +292,11 @@ static float f32_at(const uint8_t *e, int i) { float f; memcpy(&f, e + i, 4); re
 static uint32_t u32_at(const uint8_t *e, int i) { uint32_t u; memcpy(&u, e + i, 4); return u; }
 static uint16_t u16_at(const uint8_t *e, int i) { uint16_t u; memcpy(&u, e + i, 2); return u; }
 
-// The next event; kind 0 is "none before the timeout". A timeout of 0 only
-// polls. A key brings SDL's keycode and modifiers; text brings the
-// modifiers held as it was typed, and the text, which SDL frees at the
-// next poll, so it is copied into a Lean string here.
+// The next event; kind 0 is "none before the timeout", kind 7 a wake from
+// `sv_host_wake`. A timeout of 0 only polls. A key brings SDL's keycode
+// and modifiers; text brings the modifiers held as it was typed, and the
+// text, which SDL frees at the next poll, so it is copied into a Lean
+// string here.
 LEAN_EXPORT lean_obj_res sv_host_event(uint32_t timeout, lean_obj_arg io) {
   uint64_t buf[16];             // SDL_Event is a 128-byte union
   uint8_t *e = (uint8_t *)buf;
@@ -297,6 +315,7 @@ LEAN_EXPORT lean_obj_res sv_host_event(uint32_t timeout, lean_obj_arg io) {
         memcpy(&text, e + 24, sizeof text);
         return raw_event(6, SDL_GetModState(), 0, 0, text ? text : "");
       }
+      case SDL_EVENT_USER: return raw_event(7, 0, 0, 0, "");                // wake
       default: continue;
     }
   }
