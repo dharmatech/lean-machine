@@ -108,6 +108,13 @@ def took (ms : Nat) : String :=
   if ms < 1000 then s!"{ms} ms"
   else s!"{ms / 1000}.{(ms % 1000) / 100} s"
 
+-- How a run stopped: Lean saw the stop and unwound, through any
+-- `finally`, or a safepoint cut the run off, past the Lean code on the way.
+def stoppedNote (ms : Nat) (cleanly : Bool) : String :=
+  if ms == 0 then "stopped"
+  else if cleanly then s!"interrupted after {took ms}, through any `finally`"
+  else s!"cut off after {took ms}, past any `finally`"
+
 def Said.entry : Said → Entry
   | .info s => .output s
   | .warning s => .warning s
@@ -128,8 +135,8 @@ def ended (r : Repl) (tag : Nat) (o : Outcome) (ms : Nat) : Option Repl :=
     let (entries, env) : List Entry × Option Env := match o with
       | .value s => (.output s :: didn'tStop ++ timing, r.env)
       | .evaluated said env => (said.map Said.entry ++ didn'tStop ++ timing, some env)
-      | .stopped =>
-        ([.note (if ms == 0 then "stopped" else s!"stopped after {took ms}")], r.env)
+      | .stopped said cleanly =>
+        (said.map Said.entry ++ [.note (stoppedNote ms cleanly)], r.env)
       | .failed why => ([.error s!"failed: {why}"], r.env)
     some { r with waiting := none, env, transcript := entries.reverse ++ r.transcript }
   | none => none

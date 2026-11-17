@@ -38,7 +38,13 @@ was pressed (`(·.windows.map (·.title)) <$> world`), and `launch app`
 opens an app made there in a new window. `Busy.alloc 100`,
 `Busy.polled 1000` and `Busy.spin 1000` are compiled busy work, a few
 seconds each; the first two stop at Ctrl+C, `spin` doesn't and
-finishes. Click in the REPL and type; Left, Right, Home, End, Backspace
+finishes. Every function the REPL compiles starts at a safepoint, so
+loops defined there stop too (`set_option leanMachine.safepoints false
+in def …` leaves the safepoints out). A stop that reaches IO code
+defined in the REPL comes as `IO.Error.interrupted`, so `try`/`finally`
+run, and the REPL says "interrupted after …"; anything else is cut off
+at a safepoint, past any `finally` ("cut off after …"). Click in the
+REPL and type; Left, Right, Home, End, Backspace
 and Delete edit the line, and Up and Down go back and forth through
 earlier lines.
 Inspector and Notes are placeholders: click in one to drop a dot, or
@@ -63,11 +69,18 @@ through the desktop's REPL and the loop's `feed`, and prints what came
 back from each line: definitions, a type error, a namespace across
 lines, `world`, printed output. Busy work and loops defined in the REPL
 are stopped by Ctrl+C after 300 ms (`repl-running.png` is the REPL with
-one going, `repl-runs.png` after them all); an app made in the REPL is
-launched and clicked (`repl-launch.png`); an undo takes a definition
-back (`repl-undo.png`); two REPLs evaluate at once. It also prints a
-frame's time with a run going, what closing the REPL did to its run,
-and the RSS after 50 runs were stopped.
+one going, `repl-runs.png` after them all). It times loops defined in
+the REPL with safepoints and without, then stops lines that Lean sees
+the stop in, or doesn't: a `try … finally`, pure code inside one, a
+loop that catches the stop and goes on, `IO.sleep`, a loop without
+safepoints, a slow `#reduce` (`repl-interrupt.png`). An app made in the
+REPL is launched and clicked (`repl-launch.png`); an undo takes a
+definition back (`repl-undo.png`); two REPLs evaluate at once. It also
+prints a frame's time with a run going, what closing the REPL did to
+its run, and the RSS after 50 runs were stopped. Last, it cuts off
+compiled code ten times in the middle of `Ref.modify`, and ten times
+while it holds a mutex, with masking off and then on, and says how
+often the ref was left taken or the mutex locked.
 
 Needs Lean 4.36 through elan (`lean-toolchain` pins it), Cairo, SDL3's
 shared library, and a C++ compiler (`c++`). SDL3's headers
@@ -79,11 +92,13 @@ installed.
 
 The Lean code is one module per file in `LeanMachine/`, in the
 `LeanMachine` namespace, with a thin `Main.lean` on top. `Picture`, `Key`,
-`App`, `Busy`, the apps in `Apps/`, `World`, `Desktop` and `View` are pure
-and import only each other. `Ambient` is what code in a run can reach,
-for the REPL's Lean. Only `Host`, `Runs` and `Ambient` call C (and
-`Busy`'s `poll`, a pure C function), only `Eval` imports Lean, and only
-they and `Main.lean` touch `IO`.
+`App`, `Safepoint`, `Busy`, the apps in `Apps/`, `World`, `Desktop` and
+`View` are pure and import only each other. `Ambient` is what code in a
+run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
+`Eval` call C (and `Safepoint`'s safepoints, pure C functions, and
+`Main.lean`'s helpers for `--test`), only
+`Eval` imports Lean, and only they and `Main.lean` touch `IO` (and
+`Safepoint`'s `interrupted`, the error a stop becomes).
 
 - `Picture.lean`: `Picture`, plain data: rectangles, circles, rings,
   lines, text at a point or aligned in a box, monospace text, a picture
@@ -104,18 +119,23 @@ they and `Main.lean` touch `IO`.
   function `Unit → String`, or to `eval` a line of Lean in an `Env`,
   under a tag the app chooses, or to `stop` the run with a tag; the
   `Outcome` (a value; what Lean said, as `Said` messages, and the `Env`
-  after the line; stopped; failed) comes back as an event with the tag
-  and the milliseconds the run took. `Env`, a REPL's Lean, is opaque
+  after the line; stopped, cleanly, with what Lean said first, or cut
+  off; failed) comes back as an event with the tag and the milliseconds
+  the run took. `Env`, a REPL's Lean, is opaque
   here, so the pure modules don't import Lean.
   `App.asking` makes an app from a state of any type, a step and a view,
   and hides the state's type, so the desktop holds apps of every kind
   in one list; `App.of` makes one that never asks. `AppEvent` is an
   event in the app's own coordinates, a key with its modifiers, typed
   text, a tick with the `TimeOfDay`, or a run's outcome (`done`).
+- `Safepoint.lean`: what compiled code calls where a stop may reach it.
+  `poll x` is `x`, a safepoint in C. `safepoint` and `interruptNow` are
+  the calls the REPL's Lean puts at the start of every function it
+  compiles, and `interrupted` the `IO.Error.interrupted` an IO function
+  returns there when it takes a stop.
 - `Busy.lean`: compiled busy work, `n` million steps of it, that differ
   in where a stop can reach them: `alloc` allocates in every step,
-  `polled` calls `poll` in every step, `spin` does neither. `poll x` is
-  `x`, a safepoint in C.
+  `polled` calls `poll` in every step, `spin` does neither.
 - `Ambient.lean`: what code in a run can reach without being handed it:
   `world`, the world when the run was asked for, and `launch app`, which
   opens an app when the run ends. The run's guard keeps them for its
@@ -130,7 +150,9 @@ they and `Main.lean` touch `IO`.
   transcript says it's running, and Ctrl+C asks for a stop. What Lean
   said goes in the transcript, output in green, warnings in amber,
   errors in red, with how long the run took, and the `Env` after the
-  line becomes the REPL's. The line is a pair of lists, the
+  line becomes the REPL's. A stopped line says how it stopped:
+  interrupted, through any `finally`, after what Lean said up to then,
+  or cut off, past any `finally`. The line is a pair of lists, the
   characters before the cursor (nearest first) and those after it, so
   every edit is a cons or an uncons. Up and Down walk the history and
   come back to the line being typed. The transcript is a list, newest first, and the view
@@ -170,10 +192,10 @@ they and `Main.lean` touch `IO`.
   loop's wait, `localTime` (through Lean's `Std.Time`), and `render`,
   the only code that draws.
 - `Runs.lean`: the loop's side of requests. `Runs` is the runs going on:
-  each a window and tag, a stop flag, a Lean task with a dedicated
-  thread that does the work inside a guard (runs.cpp) and calls
-  `Services.wake` when it ends, and the apps it launched. `handle`
-  starts and stops runs (a new run with a tag still going replaces it;
+  each a window and tag, a stop flag and a cancel token (`Live.stop`
+  sets both), a Lean task with a dedicated thread that does the work
+  inside a guard (runs.cpp) and calls `Services.wake` when it ends, and
+  the apps it launched. `handle` starts and stops runs (a new run with a tag still going replaces it;
   a stop with nothing to stop is answered at once), evaluating through
   `Services.eval`, so this module needn't import Lean; `collect` turns
   runs that ended into `Event.done` and `Event.launch`, and `keepFor`
@@ -183,29 +205,40 @@ they and `Main.lean` touch `IO`.
   own as the desktop starts, and opens `LeanMachine`. `eval` takes a
   line, wraps it in `#eval` if it parses as a term, and elaborates it on
   the calling thread with `runCommands`, its own loop over Lean's
-  parser and `elabCommandTopLevel`. An `Env` is Lean's `Command.State`:
-  the environment and the scopes left open.
+  parser and `elabCommandTopLevel`, with the run's cancel token; once
+  it's set, no more commands are elaborated and the line has stopped,
+  cleanly. An `Env` is Lean's `Command.State`: the environment and the
+  scopes left open. The REPLs' Lean compiles with one pass more than
+  Lean's own (`withSafepoints`): `safepointsPass`, at the end of the
+  compiler's impure phase, starts every function at a safepoint, and an
+  IO function (`returnsIO`) at one that can return `interrupted`.
 - `Main.lean`: `run`, the loop. `feed` steps the desktop through events
   and hands what its apps ask to `Runs`, with the world they asked in. Each pass waits for events, but
   not past 100 ms or the next second (a run that ends wakes it), applies
   them, then the outcomes of runs that ended, stops the runs of windows
   that are gone, ticks with the time, and draws. Also `test` and
-  `testRuns` for `--test`, and `main`.
+  `testRuns` and `testMasking` for `--test`, and `main`.
 - `shim.c`: Cairo draws into an image in memory, and SDL3 shows it in
   one window and hands back events, text input included, and a wake
   (an SDL user event). No GPU in the design.
 - `runs.cpp`: stopping a run. A run's thread is inside a guard
   (`sv_guarded` for a pure function, `sv_guarded_io` for an IO action)
   while it works; safepoints check its stop flag (a thread-local
-  pointer to it) and throw a C++ exception that the guard catches. The
-  safepoints are `poll` and every small allocation: the linker sends
-  Lean's `lean_alloc_small_object_core` through a wrapper here. The
-  guard also keeps the run's ambient in a thread-local, for
-  `sv_ambient`.
+  pointer to it). A raised flag is first offered to IO code compiled in
+  the REPL (`sv_interrupt_now`), for 50 ms; then a safepoint throws a
+  C++ exception that the guard catches (it cuts the run off). Code that
+  took the offer gets 500 ms to finish before it too is cut off. The
+  safepoints are `poll`, the ones the REPL compiles in, every small
+  allocation (the linker sends Lean's `lean_alloc_small_object_core`
+  through a wrapper here), and the end of a masked region: wrappers
+  around `Ref.take` and `Ref.put` and the mutexes' lock and unlock count
+  what the thread holds, and no run is cut off while it holds any. A
+  wrapped `IO.sleep` ends when its run is asked to stop. The guard also
+  keeps the run's ambient in a thread-local, for `sv_ambient`.
 - `lakefile.lean` builds the `LeanMachine` library and `Main.lean`,
   compiles `shim.c` with `cc` and `runs.cpp` with `c++`, and links them
-  into `desktop` with Lean's interpreter (`supportInterpreter`) and
-  `-Wl,--wrap=lean_alloc_small_object_core`.
+  into `desktop` with Lean's interpreter (`supportInterpreter`) and a
+  `-Wl,--wrap=` for each runtime function runs.cpp wraps.
 
 ## Findings so far
 
@@ -321,13 +354,15 @@ they and `Main.lean` touch `IO`.
   code compiled anywhere (`Init` and `Std` included, as they're linked
   statically) and from Lean's C++ runtime, whose locks are released as
   the exception passes; `poll` is the other. `alloc` and `poll` stop within a
-  millisecond of Ctrl+C; `spin`, a loop on small `Nat`s that neither
-  allocates nor polls, can't be stopped and runs to its end. Lean's
-  compiler would have to put polls in loops for that. Unwinding skips the
-  Lean code it leaves, so what that code held is never freed, but a stop
-  in a loop that drops what it makes leaks little: RSS stayed at 23 MB
-  over 50 stops. A Lean `finally` doesn't run on a stop, as it isn't a
-  Lean exception.
+  millisecond of Ctrl+C (50 ms in the REPL, which offers the stop to
+  Lean code first: see below); `spin`, a compiled loop on small `Nat`s
+  that neither allocates nor polls, can't be stopped and runs to its
+  end. Lean's compiler would have to put polls in the loops it compiles
+  for that. Unwinding skips the Lean code it leaves, so what that code
+  held is never freed, but a stop in a loop that drops what it makes
+  leaks little: RSS stayed at 23 MB over 50 stops. No Lean `finally`
+  runs on the way, as the exception isn't Lean's; stops that Lean sees
+  are below.
 - **Exiting with a run going.** Lean's `main` calls
   `lean_finalize_task_manager` on its way out, but that doesn't wait for
   dedicated threads: quitting with a `spin` going exits at once. The
@@ -376,14 +411,110 @@ they and `Main.lean` touch `IO`.
   their run through a C++ thread-local the guard sets. Code that starts
   tasks of its own leaves the ambient, and the stop flag, behind.
 - **Stopping evaluation.** Compiled code called from the REPL stops as
-  it did before: `Busy.alloc` and `Busy.polled` within a millisecond.
+  it did before: `Busy.alloc` and `Busy.polled` within a millisecond
+  (50 ms now that a stop is offered to Lean code first, below).
   So does a loop defined in the REPL that allocates, which the
   interpreter runs; one that only does arithmetic on small `Nat`s
-  (about 250 ns a step interpreted, 60 times compiled code) can't be
-  stopped, like `Busy.spin`. A stop that came while such a loop ran
-  takes effect at the first allocation after it, so the run reports
-  that it stopped after the loop's whole time. RSS grew 1 to 2 MB over
-  50 stopped evaluations.
+  (about 250 ns a step interpreted, 60 times compiled code) couldn't be
+  stopped, like `Busy.spin`, until the REPL put safepoints in what it
+  compiles (below). A stop that comes while a loop without safepoints
+  runs (`Busy.spin`, or `quietRaw` below) takes effect at the first
+  allocation after it, so the run reports that it stopped after the
+  loop's whole time. RSS grew 1 to 2 MB over 50 stopped evaluations.
+- **Safepoints in what the REPL compiles.** Lean 4.36's compiler (LCNF)
+  runs a list of passes kept in the environment, as an extension's state
+  (`passManagerExt`), so that a module can add passes for the modules
+  that import it (`@[cpass]`). The REPLs' Lean gets one more pass by
+  changing that state once it's imported: the pass is compiled into the
+  desktop, so the REPLs' Lean needn't import Lean for it, and nothing
+  else compiles with it. It runs at the end of the impure phase, after
+  boxing and reference counting, so that nothing later drops or moves
+  what it adds, and starts every function with `safepoint 0`, those of
+  `#eval` included. Loops in what Lean compiles are recursive functions
+  (join points don't loop), so a safepoint at the start of every
+  function reaches every loop the REPL compiles, closures and
+  specializations of library loops included: `quiet 4000000 0` stops 50
+  ms after Ctrl+C. Two things to know when writing such a pass: in the
+  impure phase a `cases` is named by its discriminant's type in the
+  machine (`UInt8` for a `Bool`; naming it `Bool` panics in
+  `nameToIRType`), and an impure signature no longer says whether a
+  function is IO, so `returnsIO` asks the declaration the mono phase
+  saved (`… → lcVoid → EST.Out IO.Error …`).
+- **What safepoints cost.** About 50 ns a call of a function defined in
+  the REPL: that's what the interpreter takes to call compiled code,
+  whether through the `@[noinline]` wrapper or the extern itself (its
+  `_boxed` version, which Lean makes for externs with scalar
+  arguments). On loops that do nothing else, 2 million steps: `quiet`
+  588 ms with safepoints, 486 ms without (+21%); an empty IO loop 389
+  and 283 ms (+37%). Code that does more in a call pays less, and
+  compiled code pays nothing. `set_option leanMachine.safepoints false
+  in def …` leaves them out of a definition (`register_option` in a
+  compiled module registers the option as the desktop starts).
+- **The world is gone from IO.** In Lean 4.36, `IO α` is `EST IO.Error
+  IO.RealWorld α`: a function from an erased world (`Void`) to an
+  `EST.Out`, `ok` or `error` with one field each. Externs take no world
+  argument, and `BaseIO` and `ST` results aren't boxed at all. So an IO
+  function can return the error object at its start with no world to
+  thread. runs.cpp's externs, written for the older convention, took a
+  world argument Lean no longer passes, and `sv_guarded_io` handed that
+  garbage to the action as its world; harmless, as the world is never
+  read, and now gone.
+- **Stops that Lean sees.** A stop is offered first: the next IO
+  function compiled in the REPL to start returns `IO.Error.interrupted`,
+  which Lean code sees as any other error, so its `try`/`catch`/`finally`
+  run, the elaborator's included. The elaborator also has its own
+  interruption: `Core.checkInterrupted`, called as it recurses, throws
+  once the command's cancel token is set, and each run passes one, set
+  along with its flag, so a slow `#reduce` stops cleanly 10 ms after
+  Ctrl+C. No command after the one the stop came in is elaborated, and
+  the REPL keeps the Lean it had. `do try ticks 1000 finally IO.println
+  "cleaned up"` stops 4 ms after Ctrl+C, with the ticks so far and
+  "cleaned up". What Lean can't see: a stop that finds pure code (`try
+  IO.println (quiet …) finally …`) has no IO result to become, so it's
+  cut off once the offer's 50 ms are out, past the `finally`; and code
+  that catches the interruption and goes on is cut off 500 ms after it
+  took it. `IO.sleep` ends at a stop, so the run goes on to its next
+  safepoint: Lean implements it with `dbgSleep`, which runs.cpp wraps
+  to sleep in 5 ms slices. Output comes at the end, as before: `#eval`
+  gathers it.
+- **Masking.** `IO.Ref.modify` is `Ref.take` then `Ref.put`. Take
+  empties the ref, and a thread that reads an empty ref shared between
+  threads spins until it's filled (`lean_st_ref_take` and `get` loop on
+  an atomic exchange). A run cut off between the two leaves the ref
+  empty for good, and any thread that reads it spins, at full speed, for
+  ever. The desktop had one: `launch` modifies the run's list of apps,
+  which the loop reads when the run ends. A mutex held when a run is cut
+  off stays locked (`Mutex.atomically` unlocks in a `finally`). So
+  runs.cpp wraps those primitives (`--wrap` of `lean_st_ref_take`, `put`,
+  and the mutexes' lock, try-lock and unlock) to count what each thread
+  holds; a stop that comes meanwhile waits, and the put or unlock that
+  ends the region is a safepoint. It reaches interpreted code too: the
+  interpreter calls externs through compiled code (their `_boxed`
+  versions), which calls the wrapped functions. Compiled code cut off
+  midway, ten times each: without masking the ref was left taken 6 to 9
+  times and the mutex locked 8 or 9 times (over three runs of the test);
+  with it, never, and the stops took no longer (50 ms). A stop is still offered to IO code that holds a
+  mutex (the `finally` unlocks it), not to code that holds a taken ref.
+  A long critical section holds a stop off until it ends.
+- **What needs Lean itself.** All of the above works without changing
+  Lean. What would need its compiler or runtime:
+  - Compiled loops that neither allocate nor poll (`Busy.spin`): the C
+    emitter would have to put polls in loops, as the pass does for the
+    REPL.
+  - Cheap safepoints in interpreted code: a check the interpreter made
+    itself on entering a function (a thread-local load) would cost a
+    nanosecond, not 50.
+  - Stops as exceptions everywhere, pure code included, so that every
+    `finally` runs and what each frame holds is freed: asynchronous
+    exceptions, like GHC's `throwTo`, need every frame to unwind the
+    Lean way. Today a cut-off is a C++ exception, which skips Lean's
+    frames.
+  - Masking in Lean (GHC's `mask`) with a per-thread stop flag the
+    runtime checks, instead of linker wrappers, which miss calls inside
+    the runtime's own library and functions that are inlined.
+  - Blocking calls that end at a stop: `IO.wait`, `Condvar.wait`,
+    reading a stream. `IO.cancel` only sets a flag for
+    `IO.checkCanceled`, and a cancel token only reaches the elaborator.
 - **Apps made in the REPL.** `launch` puts an app made by interpreted
   code in a window, and its step and view run in the interpreter on the
   main thread, between frames. A step that never returns would hang the
@@ -397,7 +528,8 @@ they and `Main.lean` touch `IO`.
   the rest. Pure work can be run again safely; evaluation that changes
   the environment can't.
 - Guard the steps and views of apps made in the REPL, on the main
-  thread: a watchdog could raise their flag after a few frames' time.
+  thread: they have safepoints now, so a watchdog could raise a flag
+  for them after a few frames' time.
 - Definitions shared between REPLs, or a REPL opened from another's Lean.
 - Errors pointed at with a caret under the line, not a column number.
 - The REPL: scroll back through the transcript (PageUp, the wheel),

@@ -129,9 +129,8 @@ def hearNow (svc : Services) (r : Repl) (e : AppEvent) : IO Repl := do
     let answer : AppEvent ← match a with
       | .run tag work => pure (.done tag (.value (work ())) 0)
       | .eval tag src env => do
-        let (said, env) ← svc.eval src env
-        pure (.done tag (.evaluated said env) 0)
-      | .stop tag => pure (.done tag .stopped 0)
+        pure (.done tag (← svc.eval src env (← IO.CancelToken.new)) 0)
+      | .stop tag => pure (.done tag (.stopped [] false) 0)
     return ((r.step answer).map (·.1)).getD r
 
 -- The desktop after `e`, with the runs its apps ask for ended.
@@ -246,11 +245,63 @@ def LeanMachine.Event.showDone : Event → String
     let how := match o with
       | .value s => s!"value {s}"
       | .evaluated said _ => s!"said {said.map Said.show}"
-      | .stopped => "stopped"
+      | .stopped said cleanly =>
+        s!"stopped{if cleanly then " cleanly" else ""}\
+          {if said.isEmpty then "" else s!", said {said.map Said.show}"}"
       | .failed why => s!"failed: {why}"
     s!"window {win} run {tag}: {how}, {ms} ms"
   | .launch win app => s!"window {win} opened {app.title}"
   | _ => "another event"
+
+@[extern "sv_set_masking"] opaque setMasking (on : UInt8) : IO Unit
+-- Is the ref emptied by `Ref.take`, and not put back? Reading it would
+-- wait for ever.
+@[extern "sv_ref_taken"] opaque refTaken {α : Type} (r : @& IO.Ref α) : IO Bool
+
+-- Ten runs, each cut off 70 ms after it starts, while it does `step`
+-- over and over (compiled code: the stop isn't offered to it): how many
+-- left `stuck` true, and how long the stops took on average.
+def cutOffMidway {σ : Type} (fresh : IO σ) (step : σ → Nat → IO Unit)
+    (stuck : σ → IO Bool) : IO (Nat × Nat × List σ) := do
+  let mut left := 0
+  let mut total := 0
+  let mut kept := []
+  for _ in [0:10] do
+    let x ← fresh
+    let flag ← StopFlag.new
+    let amb : Ambient := { world := start.now, opened := ← IO.mkRef [] }
+    let task ← IO.asTask (prio := .dedicated)
+      (guardedIO flag amb do for i in [0:1000000000] do step x i)
+    IO.sleep 20
+    flag.raise
+    let t0 ← IO.monoNanosNow
+    let _ ← IO.wait task
+    total := total + ((← IO.monoNanosNow) - t0) / 1000000
+    if ← stuck x then left := left + 1
+    kept := x :: kept   -- not freed: a locked mutex mustn't be destroyed
+  return (left, total / 10, kept)
+
+-- `Ref.modify` and a mutex, cut off midway with masking off, then on.
+def testMasking : IO Unit := do
+  -- Most of each step is spent in the function `modify` applies, between
+  -- the take and the put.
+  let modifyStep (r : IO.Ref (List Nat)) (i : Nat) : IO Unit :=
+    r.modify fun l => ((List.range 200).map (· + i + l.length)).take 1
+  let lockStep (m : Std.BaseMutex × IO.Ref Nat) (i : Nat) : IO Unit := do
+    m.1.lock
+    m.2.set ((List.range 200).map (· + i)).length
+    m.1.unlock
+  let isLocked (m : Std.BaseMutex × IO.Ref Nat) : IO Bool := do
+    if ← m.1.tryLock then m.1.unlock; return false else return true
+  for masking in [false, true] do
+    setMasking (if masking then 1 else 0)
+    let (taken, msR, _) ← cutOffMidway (IO.mkRef []) modifyStep refTaken
+    let (locked, msM, _) ← cutOffMidway (do return (← Std.BaseMutex.new, ← IO.mkRef 0))
+      lockStep isLocked
+    IO.println s!"masking {if masking then "on" else "off"}: Ref.modify cut off 10 times \
+      left the ref taken {taken} times ({msR} ms a stop); a lock held while cut off \
+      left the mutex locked {locked} times ({msM} ms)"
+  setMasking 1
 
 def rssMB : IO Nat := do
   let s ← IO.FS.readFile "/proc/self/status"
@@ -286,26 +337,53 @@ def testRuns (c : Canvas) (svc : Services) : IO Unit := do
      "Shapes.dot matches .circle ..",
      "(·.windows.map (·.title)) <$> world", "IO.println \"printed\"",
      "#eval [1, 2, 3].map sq"]
+  -- Enters a line, presses Ctrl+C 300 ms later, and says how the run
+  -- ended and how long after Ctrl+C.
+  let stopAt (d : Desktop) (runs : Runs) (line : String) (png : Option String := none) :
+      IO (Desktop × Runs) := do
+    let (d, runs) ← feed d runs (enter line)
+    IO.sleep 300
+    if let some file := png then render c d.view; c.savePng file
+    let t0 ← IO.monoNanosNow
+    let (d, runs) ← feed d runs [ctrlC]
+    let (d, runs, seen) ← settle d runs
+    IO.println s!"{line}, Ctrl+C at 300 ms: {seen.map (·.showDone)}, \
+      {← ms t0} ms after Ctrl+C"
+    return (d, runs)
   -- Stopped by Ctrl+C after 300 ms: compiled busy work, and loops
-  -- defined here, which the interpreter runs.
+  -- defined here, which the interpreter runs. A stop is offered to IO
+  -- code first: these are cut off 50 ms later.
   let (d, runs) ← lines d runs
     ["def churn : Nat → Nat → Nat | 0, a => a | n + 1, a => churn n ((List.replicate 3 n).length + a)",
      "def quiet : Nat → Nat → Nat | 0, a => a | n + 1, a => quiet n ((a + n) % 7)"]
+  let (d, runs) ← stopAt d runs "Busy.alloc 2000" "repl-running.png"
   let mut d := d
   let mut runs := runs
-  for line in ["Busy.alloc 2000", "Busy.polled 50000", "Busy.spin 400",
-               "churn 100000000 0", "quiet 4000000 0"] do
-    (d, runs) ← feed d runs (enter line)
-    IO.sleep 300
-    if line == "Busy.alloc 2000" then
-      render c d.view; c.savePng "repl-running.png"
-    let t0 ← IO.monoNanosNow
-    (d, runs) ← feed d runs [ctrlC]
-    let (d', runs', seen) ← settle d runs
-    d := d'; runs := runs'
-    IO.println s!"{line}, Ctrl+C at 300 ms: {seen.map (·.showDone)}, \
-      {← ms t0} ms after Ctrl+C"
+  for line in ["Busy.polled 50000", "Busy.spin 400", "churn 100000000 0", "quiet 4000000 0"] do
+    (d, runs) ← stopAt d runs line
   render c d.view; c.savePng "repl-runs.png"
+  -- What the safepoints cost: the same loops compiled without them.
+  IO.println "the safepoints' cost, each line waited for:"
+  let raw := "set_option leanMachine.safepoints false in "
+  (d, runs) ← lines d runs
+    [raw ++ "def quietRaw : Nat → Nat → Nat | 0, a => a | n + 1, a => quietRaw n ((a + n) % 7)",
+     "def countIO : Nat → IO Unit | 0 => pure () | n + 1 => countIO n",
+     raw ++ "def countIORaw : Nat → IO Unit | 0 => pure () | n + 1 => countIORaw n",
+     "quiet 2000000 0", "quietRaw 2000000 0", "countIO 2000000", "countIORaw 2000000"]
+  -- Stops that Lean code sees: `finally` runs. Not when the stop finds
+  -- pure code, nor when code catches it and goes on (it's cut off 500 ms
+  -- later). A sleep ends at a stop; a loop without safepoints doesn't.
+  -- Lean's elaborator sees its cancel token (`#reduce`).
+  IO.println "stops that Lean sees, or doesn't:"
+  (d, runs) ← lines d runs
+    ["def ticks : Nat → IO Unit | 0 => pure () | n + 1 => do IO.println s!\"tick {n}\"; IO.sleep 100; ticks n",
+     "partial def stubborn : IO Unit := do (do try ticks 1000 catch _ => IO.println \"caught it\"); stubborn"]
+  for line in ["do try ticks 1000 finally IO.println \"cleaned up\"",
+               "do try IO.println (quiet 40000000 0) finally IO.println \"cleaned up\"",
+               "stubborn", "IO.sleep 100000", "quietRaw 2000000 0",
+               "set_option maxRecDepth 100000 in #reduce (List.range 30000).foldl (· + ·) 0"] do
+    (d, runs) ← stopAt d runs line
+  render c d.view; c.savePng "repl-interrupt.png"
   -- An app made here opens in a window by the REPL, and runs there: a
   -- press drops a dot.
   (d, runs) ← lines d runs
@@ -401,7 +479,7 @@ def main (args : List String) : IO Unit := do
     let _ ← IO.wait base
     IO.println s!"the REPLs' Lean imported in {((← IO.monoNanosNow) - t0) / 1000000} ms, \
       RSS {← rssMB} MB"
-    test c svc; testRuns c svc
+    test c svc; testRuns c svc; testMasking
   | ["--frames", n] =>
     Host.open "Lean Machine" screenW.toUInt32 screenH.toUInt32
     run c svc start {} n.toNat?

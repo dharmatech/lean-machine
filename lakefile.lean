@@ -45,10 +45,18 @@ lean_exe desktop where
   moreLinkObjs := #[shim, runs]
   -- Lean links against its own C library. Name each system library by its
   -- full path: an `-L` to their directory pulls in the system's start files
-  -- and the link fails. Every small allocation in Lean code goes through
-  -- runs.cpp's safepoint first.
+  -- and the link fails. The wrapped primitives go through runs.cpp first:
+  -- every small allocation is a safepoint, a run isn't cut off between a
+  -- ref's take and put or while it holds a mutex, and a sleep ends when its
+  -- run is asked to stop.
   moreLinkArgs := run_io do
     let lib := (← pkgConfig #["--variable=libdir", "cairo"])[0]!
+    let wrapped := #["lean_alloc_small_object_core", "lean_st_ref_take", "lean_st_ref_put",
+      "lean_io_basemutex_lock", "lean_io_basemutex_try_lock", "lean_io_basemutex_unlock",
+      "lean_io_baserecmutex_lock", "lean_io_baserecmutex_try_lock",
+      "lean_io_baserecmutex_unlock", "lean_io_basesharedmutex_write",
+      "lean_io_basesharedmutex_try_write", "lean_io_basesharedmutex_unlock_write",
+      "lean_io_basesharedmutex_read", "lean_io_basesharedmutex_try_read",
+      "lean_io_basesharedmutex_unlock_read", "lean_dbg_sleep"]
     return #[s!"{lib}/libcairo.so.2", s!"{lib}/libSDL3.so.0",
-             "-Wl,--allow-shlib-undefined",
-             "-Wl,--wrap=lean_alloc_small_object_core"]
+             "-Wl,--allow-shlib-undefined"] ++ wrapped.map (s!"-Wl,--wrap={·}")

@@ -52,7 +52,11 @@ inductive Request where
 inductive Outcome where
   | value (s : String)     -- `run` finished with this
   | evaluated (said : List Said) (env : Env)  -- `eval` finished: what Lean said, and the new Lean
-  | stopped                -- a stop reached it (or there was no such run)
+  -- A stop reached it (or there was no such run). `cleanly`: Lean saw the
+  -- stop, as `IO.Error.interrupted` or its own interruption, and the code
+  -- on the way unwound itself (`finally` ran), and `said` is what Lean
+  -- said before it; otherwise a safepoint cut the run off.
+  | stopped (said : List Said := []) (cleanly : Bool := false)
   | failed (why : String)  -- it couldn't run
 
 -- An event as an app hears it. Positions are in the app's own coordinates:

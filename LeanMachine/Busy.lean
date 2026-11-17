@@ -1,16 +1,13 @@
+import LeanMachine.Safepoint
+
 /-! # Busy work: compiled loops to run, and stop
 
 Each takes `n` million steps, and they differ only in where a stop can
-reach them. A run is stopped at a safepoint (runs.cpp): every small
-allocation, and `poll`. Pure. The REPL's Lean imports this module, so
-`Busy.alloc 100` there runs this compiled code. -/
+reach them (LeanMachine/Safepoint.lean): every small allocation, and
+`poll`. Pure. The REPL's Lean imports this module, so `Busy.alloc 100`
+there runs this compiled code. -/
 
 namespace LeanMachine
-
--- A safepoint: `poll x` is `x`, unless the run it's in has been asked to
--- stop. Not inlined, so code elaborated later can call it by name.
-@[extern "sv_poll"] opaque pollCore (x : Nat) : Nat
-@[noinline] def poll (x : Nat) : Nat := pollCore x
 
 def Busy.million : Nat := 1000000
 
@@ -28,7 +25,9 @@ def Busy.polled (n : Nat) : Nat := go (n * Busy.million) 0 where
     | 0, acc => acc
     | k + 1, acc => go k (poll ((acc + k) % 1000003))
 
--- Neither polls nor allocates: nothing stops it before it's done.
+-- Neither polls nor allocates: nothing stops it before it's done. Its
+-- twin defined in the REPL can be stopped: the REPL's Lean puts a
+-- safepoint at the start of every function it compiles.
 def Busy.spin (n : Nat) : Nat := go (n * Busy.million) 0 where
   go : Nat → Nat → Nat
     | 0, acc => acc
