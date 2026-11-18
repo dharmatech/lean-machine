@@ -27,7 +27,7 @@ def World.menuView (world : World) (m : Menu) : Picture :=
            .rect (m.x + 1) (m.y + 1) (menuW - 2) (world.menuH - 2) 6 0x1a1b26,
            .textIn (m.x + 14) m.y (menuW - 28) menuHeadH 12 .left 0x565f89
              "Open an app"] ++
-    world.catalog.zipIdx.map fun (app, i) =>
+    world.catalog.zipIdx.map fun ((_, app), i) =>
       let y := m.itemY i
       let on := lit == some i
       .group ((if on then [.rect (m.x + 4) y (menuW - 8) itemH 4 0x414868]

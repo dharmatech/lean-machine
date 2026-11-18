@@ -29,6 +29,9 @@ inductive Event where
   | done (win tag : Nat) (outcome : Outcome) (ms : Nat)  -- from the loop: a run ended
   | launch (win : Nat) (app : App)  -- from the loop: a run in window `win` opened `app`
   | wheel (x y dy : Float)    -- dy steps away from the user, with the pointer at (x, y)
+  -- From the loop: a reload that window `win` asked for made these apps,
+  -- each the new code of the declaration it's named by.
+  | reload (win : Nat) (apps : List (Lean.Name × App))
 
 structure Win where
   id : Nat
@@ -37,6 +40,10 @@ structure Win where
   y : Float
   w : Float
   h : Float
+  -- The declaration its app was opened from, from the menu
+  -- (`LeanMachine.clock`); a reload of it replaces the app. `none`: made
+  -- in a REPL.
+  origin : Option Lean.Name := none
   deriving Inhabited
 
 def Win.title (w : Win) : String := w.app.title
@@ -77,7 +84,7 @@ structure World where
   focus : Nat             -- 0: none
   drag : Option Drag
   menu : Option Menu      -- none: closed
-  catalog : List App      -- what the menu opens
+  catalog : List (Lean.Name × App)  -- what the menu opens, by declaration
   time : TimeOfDay        -- the last tick's; a new app hears it as it opens
   nextId : Nat
   mouseX : Float
@@ -118,7 +125,7 @@ def Win.toApp (w : Win) : Event → Option AppEvent
   | .tick t => some (.tick t)
   | .done _ tag o ms => some (.done tag o ms)
   | .wheel x y dy => some (.wheel (x - w.bodyX) (y - w.bodyY) dy)
-  | .menu .. | .launch .. | .quit => none
+  | .menu .. | .launch .. | .reload .. | .quit => none
 
 -- The window after its app hears `e`, and what the app asked for.
 def Win.hear (w : Win) (e : Event) : Win × List Asked :=
@@ -145,20 +152,48 @@ def World.toFocus (world : World) (e : Event) : World :=
 def World.toAll (world : World) (e : Event) : World :=
   world.tell (fun _ => true) e
 
--- A new window holding `app`, with its corner at (x, y) or as near as
--- keeps it on the screen, in front and focused. The app hears the time
--- first, so a clock is right from its first frame.
-def World.launch (world : World) (app : App) (x y : Float) : World :=
-  let n := world.nextId
+-- Window `n` holding `app`, as it starts, at (x, y) or as near as keeps
+-- it on the screen. The app hears the time first, so a clock is right
+-- from its first frame; what it asks for then goes in the outbox.
+def World.fresh (world : World) (n : Nat) (app : App) (x y : Float)
+    (origin : Option Lean.Name) : Win × World :=
   let (app, asks) := (app.step (.tick world.time)).getD (app, [])
   let w := app.size.1 + 2 * frame
   let h := app.size.2 + titleH + frame
-  let win : Win := { id := n, app, w, h,
-                     x := max 0 (min x (screenW - w)),
-                     y := max 0 (min y (screenH - barH - h)) }
-  { world with windows := world.windows ++ [win], focus := n,
-               nextId := n + 1,
-               outbox := (asks.map (⟨n, ·⟩)).reverse ++ world.outbox }
+  ({ id := n, app, w, h, origin,
+     x := max 0 (min x (screenW - w)),
+     y := max 0 (min y (screenH - barH - h)) },
+   { world with outbox := (asks.map (⟨n, ·⟩)).reverse ++ world.outbox })
+
+-- A new window holding `app`, with its corner at (x, y) or as near as
+-- keeps it on the screen, in front and focused.
+def World.launch (world : World) (app : App) (x y : Float)
+    (origin : Option Lean.Name := none) : World :=
+  let n := world.nextId
+  let (win, world) := world.fresh n app x y origin
+  { world with windows := world.windows ++ [win], focus := n, nextId := n + 1 }
+
+-- `app`, the new code of the declaration `name`, made by a reload that
+-- window `win` asked for. It takes the old app's place in the menu (or
+-- goes at the end of it), and in every window opened from it, where the
+-- window is, as it starts: its state was in the old app's closures, which
+-- the new code can't read. Not in window `win`: an editor that reloads
+-- its own file keeps it. When no other window has it, it opens in a new
+-- one beside `win`.
+def World.reload (world : World) (win : Nat) (name : Lean.Name) (app : App) : World :=
+  let catalog := if world.catalog.any (·.1 == name)
+    then world.catalog.map fun (n, a) => (n, if n == name then app else a)
+    else world.catalog ++ [(name, app)]
+  let world := { world with catalog }
+  if world.windows.any fun w => w.origin == some name && w.id != win then
+    world.windows.foldl (init := { world with windows := [] }) fun world w =>
+      if w.origin == some name && w.id != win then
+        let (w, world) := world.fresh w.id app w.x w.y (some name)
+        { world with windows := world.windows ++ [w] }
+      else { world with windows := world.windows ++ [w] }
+  else match world.windows.find? (·.id == win) with
+    | some w => world.launch app (w.x + w.w + 12) w.y (some name)
+    | none => world.launch app world.mouseX world.mouseY (some name)
 
 -- The menu, open at (x, y) or as near as keeps it on the screen.
 def World.openMenu (world : World) (x y : Float) : World :=
@@ -206,6 +241,7 @@ def World.stepWindows (world : World) : Event → World
     match world.windows.find? (·.id == win) with
     | some w => world.launch app (w.x + 40) (w.y + 40)
     | none => world.launch app world.mouseX world.mouseY
+  | .reload win apps => apps.foldl (fun world (name, app) => world.reload win name app) world
   | .quit => world
 
 -- With the menu open, a press on an item opens its app where the menu
@@ -216,7 +252,7 @@ def World.step (world : World) (e : Event) : World :=
   | some m, .press x y =>
     let world := { world with menu := none }
     match (world.itemAt? m x y).bind fun i => world.catalog[i]? with
-    | some app => world.launch app m.x m.y
+    | some (name, app) => world.launch app m.x m.y (some name)
     | none => world
   | some _, .key .escape _ => { world with menu := none }
   | _, _ => world.stepWindows e
@@ -227,12 +263,14 @@ def World.takeAsked (world : World) : World × List Asked :=
   ({ world with outbox := [] }, world.outbox.reverse)
 
 -- Whether `e` starts a step undo can return to. A press does, unless it
--- only closes the menu; nothing else does.
+-- only closes the menu, and so does a reload, so undo brings the old apps
+-- back; nothing else does.
 def World.commits (world : World) : Event → Bool
   | .press x y =>
     match world.menu with
     | some m => (world.itemAt? m x y).isSome
     | none => true
+  | .reload .. => true
   | _ => false
 
 end LeanMachine

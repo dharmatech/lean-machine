@@ -122,7 +122,8 @@ def ended (r : Repl) (tag : Nat) (o : Outcome) (ms : Nat) : Option Repl :=
       | .stopped said cleanly =>
         (said.map Said.entry ++ [.note (stoppedNote ms cleanly)], r.env)
       | .failed why => ([.error s!"failed: {why}"], r.env)
-      | .read _ | .wrote | .listed _ => ([], r.env)   -- the REPL asks for no files
+      -- The REPL asks for no files, and reloads none.
+      | .read _ | .wrote | .listed _ | .reloaded .. => ([], r.env)
     some { r with waiting := none, env, transcript := entries.reverse ++ r.transcript }
   | none => none
 
@@ -248,10 +249,10 @@ def Repl.view (r : Repl) (w h : Float) : Picture :=
 
 def repl : App :=
   App.asking "REPL"
-    ({ transcript := [.note "Lean, with Init and the desktop's modules, LeanMachine \
-         open. A line is commands, or a term to evaluate. `world` is the desktop \
-         when you press Enter; `launch app` opens an app. Ctrl+C stops a run. \
-         Up, Down: history. Tab completes a name."] } : Repl)
+    ({ transcript := [.note "Lean, with Init and the desktop's modules but its apps, \
+         LeanMachine open. A line is commands, or a term to evaluate. `world` is the \
+         desktop when you press Enter, its apps in `(← world).catalog`; `launch app` \
+         opens an app. Ctrl+C stops a run. Up, Down: history. Tab completes a name."] } : Repl)
     Repl.step Repl.view (size := (560, 300))
 
 end LeanMachine

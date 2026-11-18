@@ -82,6 +82,12 @@ inductive Said where
   | error (s : String)
   deriving BEq, Repr
 
+-- What Lean said about a place in a file: its line and column, from 0.
+structure Remark where
+  line : Nat
+  col : Nat
+  said : Said
+
 -- What an app asks the loop to do. A run is named by a tag the app
 -- chooses; its outcome comes back with the tag. A new run with the tag of
 -- one still going replaces it.
@@ -99,6 +105,12 @@ inductive Request where
   -- The files under `dir`, at any depth, except in hidden folders
   -- (`.lake`, `.git`), sorted.
   | list (tag : Nat) (dir : String)
+  -- Elaborates the text of the Lean file at `path` in the desktop's own
+  -- Lean, as Lake would compile it there, on a thread of its own. If
+  -- Lean finds no error in it, the apps it defines (its constants of type
+  -- `App`) go to the world, which puts each in place of the app of the
+  -- same name: in the menu, and in every window opened from it.
+  | reload (tag : Nat) (path src : String)
 
 -- How a run ended.
 inductive Outcome where
@@ -113,6 +125,11 @@ inductive Outcome where
   | read (text : String)   -- what the file had
   | wrote                  -- the file has the text now
   | listed (paths : List String)  -- from the desktop's folder
+  -- `reload` finished: what Lean said, the Lean after the file, and the
+  -- names of the apps that went to the world (none if Lean found an
+  -- error). The apps themselves can't come back in an outcome: an
+  -- `Outcome` is part of an `AppEvent`, which an `App` takes.
+  | reloaded (said : List Remark) (env : Env) (apps : List Lean.Name)
 
 -- An event as an app hears it. Positions are in the app's own coordinates:
 -- (0, 0) is the top left of its window's body.

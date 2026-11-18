@@ -26,7 +26,10 @@ raise it, click the box on a title to close it, Ctrl+Shift+Z to undo, Esc
 to quit. Clock is a clock.
 
 The REPL evaluates Lean in the desktop's own process: Init and the
-desktop's modules, with `LeanMachine` open. A line is Lean commands
+desktop's modules but its apps, with `LeanMachine` open (the apps are
+values in `(← world).catalog`, by the name of their declaration:
+``do launch ((← world).catalog.lookup `LeanMachine.clock).get!`` opens a
+clock). A line is Lean commands
 (`def sq (n : Nat) := n * n`, `#eval`, `namespace`, `open`) or a term,
 evaluated as `#eval` would (`sq 12`); what Lean says comes back under
 it, errors in red. Each line runs on a thread of its own, so the desktop
@@ -70,6 +73,21 @@ name before the cursor from the desktop's Lean (`TimeOfDay.` offers its
 fields), or indents. Ctrl+S saves (the title's `•` says there are
 changes not saved), Ctrl+O goes back to the list (twice, if there are
 changes not saved). Esc still quits the desktop, changes and all.
+Ctrl+R reloads the apps the file defines (its constants of type
+`App`), from the file as it is in the editor, saved or not: the
+desktop's Lean elaborates it on a thread of its own (Clock.lean in
+about 0.1 s, Editor.lean in 1.1 s; Ctrl+C stops it), and if Lean finds
+no error, each app takes the old one's place in the menu and in every
+window opened from it, where the window is, starting afresh. When no
+window has it, it opens beside the editor. Ctrl+Shift+Z brings the old
+apps back. The editor that reloads its own file keeps it: the new
+editor opens beside it. Lines Lean said something about get their
+numbers in red (an error), amber (a warning) or blue, and with the
+cursor on one, what Lean said shows in a box above the status line;
+editing the line takes its mark away. After a reload the file's own
+names are coloured and completed. Only files that import nothing but
+Init and the desktop's modules other than the apps can be reloaded
+(not Desktop.lean, View.lean or Main.lean).
 Inspector and Notes are placeholders: click in one to drop a dot, or
 type into it to see the text and the last key, with its modifiers, that
 it heard. The bar at the bottom counts
@@ -130,6 +148,25 @@ view of Editor.lean. Last, it times reading every line of Repl.lean, a
 keystroke in the middle of it, opening a comment at its top and closing
 it again, Down, and drawing an editor full of code.
 
+Then reloading. It reloads each app's file in the desktop's Lean three
+times and prints how long each took, what Lean said and the apps it
+found; tries files it can't reload (Desktop.lean and Main.lean, which
+import what the desktop's Lean doesn't, and Clock.lean with an error);
+and in an editor alone, Ctrl+R on Clock.lean colours `clockFace` as a
+constant, and an unknown name typed on line 14 marks that line. On the
+desktop, with real runs, an editor opens Clock.lean, types `NEW ` in
+the clock's digits and reloads: the open clock says `NEW 10:08:30`
+(`reload-clock.png`); undo brings back the old one; an error reloads
+nothing (`reload-error.png`, the line marked and what Lean said under
+it). Editor.lean reloaded from the editor opens a new editor beside it
+(`reload-editor.png`), and reloaded again replaces that one in place.
+Ctrl+C stops a reload. A file with an app the menu doesn't have adds it
+to the menu, and Placeholder.lean's apps replace Inspector and Notes.
+It times a clock's view and an editor's keystroke, Down and view,
+compiled, reloaded, and reloaded without safepoints, and prints RSS
+over 40 reloads of Clock.lean and 10 of Editor.lean, each kept for
+undo.
+
 Needs Lean 4.36 through elan (`lean-toolchain` pins it), Cairo, SDL3's
 shared library, and a C++ compiler (`c++`). SDL3's headers
 (`libsdl3-dev`) are not needed. The desktop reads the .olean files of
@@ -171,7 +208,11 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   off; failed) comes back as an event with the tag and the milliseconds
   the run took. Files are requests too: `read` a file, `write` one,
   `list` the files under a folder, by paths from the desktop's own
-  folder, with outcomes `read` (the text), `wrote` and `listed`. An
+  folder, with outcomes `read` (the text), `wrote` and `listed`.
+  `reload` elaborates a file's text in the desktop's Lean; its outcome
+  `reloaded` has what Lean said, as `Remark`s (a `Said` at a line and
+  column), the Lean after the file, and the names of the apps that went
+  to the world. An
   `Env`, a REPL's Lean, holds Lean's state, opaque
   here, so the pure modules don't import Lean, and pure functions
   over it that Eval.lean makes: `tokens`, a line's `Token`s (where each
@@ -215,7 +256,12 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   only as far as they start differently now (`Buffer.again`). It asks
   for the desktop's Lean and the list of files as it opens, as the REPL
   asks for its Lean; opening and saving are `read` and `write`
-  requests, under a tag for each kind. `follow` keeps the cursor in
+  requests, under a tag for each kind, and so is Ctrl+R's `reload`.
+  What Lean said at a reload goes on the lines it's about
+  (`Lexed.said`, `Buffer.remark`), so the marks move with the lines;
+  a line read again after an edit loses its own. The editor keeps the
+  desktop's Lean (`base`) and the Lean it reads the file with (`env`),
+  the Lean after the file once it's reloaded. `follow` keeps the cursor in
   view; the step can't know the window's size, so it uses the size the
   editor asks for (`editorSize`), as windows don't change size yet. The
   title, from the state, is the file's name, with `•` when it has
@@ -250,7 +296,7 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   columns, without the namespace typed, until the line changes.
 - `Apps/Placeholder.lean`: stands in for apps not written yet. A click
   drops a dot where it lands; it shows what was typed into it and the
-  last key it heard.
+  last key it heard. `inspector` and `notes` are the menu's two.
 - `World.lean`: windows, the pointer, the menu and events. Each window
   holds an app. `World.step : World → Event → World` drags, raises,
   focuses and closes windows, passes ticks to every app, and passes other
@@ -261,16 +307,26 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   focused or not. What apps ask for waits in the world's
   `outbox`, marked with the window, until the loop takes it
   (`takeAsked`). Ctrl+Shift+N opens the menu at the pointer.
-  The world holds a `catalog` of apps, the menu's items, but knows none
-  of them by name. `World.launch` opens an app in a new window, kept on
-  the screen and told the time first. `World.commits` says which events
-  start a step undo can return to: a press that does something.
+  The world holds a `catalog` of apps, the menu's items, each by the
+  name of its declaration (`LeanMachine.clock`), and each window
+  remembers the declaration its app came from (`Win.origin`; none for
+  an app a REPL launched). `World.launch` opens an app in a new window,
+  kept on the screen and told the time first. A reload's apps
+  (`Event.reload`) go through `World.reload`: each replaces the menu's
+  item of its name, or is added, and the app of every window opened
+  from it, but the window that asked; it starts afresh there
+  (`World.fresh`), the window's size its own. With no such window, it
+  opens one beside the window that asked. `World.commits` says which
+  events start a step undo can return to: a press that does something,
+  and a reload.
 - `Desktop.lean`: `Desktop` is the world now and every world before it;
   undo (Ctrl+Shift+Z) takes the previous one, apps' states included.
   The worlds kept for undo have empty outboxes, so undo never asks again.
   The start desktop opens the REPL, Clock, Inspector and Notes. Also `catalog`,
-  what the menu opens (Clock, REPL, Editor, Inspector, Notes), and `start`, the desktop the program starts with,
-  opened with `launch` as the menu would.
+  what the menu opens (Clock, REPL, Editor, Inspector, Notes), each
+  named with a ``` ``name ``` literal, which Lean checks is a declaration,
+  and `start`, the desktop the program starts with, opened with
+  `launch` as the menu would.
 - `View.lean`: `Desktop.view` returns a `Picture`. Each app's view is
   moved to its window's body and cut to it. The menu draws over
   everything, its item under the pointer lit.
@@ -287,14 +343,17 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   inside a guard (runs.cpp) and calls `Services.wake` when it ends, and
   the apps it launched. `handle` starts and stops runs (a new run with a tag still going replaces it;
   a stop with nothing to stop is answered at once), evaluating through
-  `Services.eval`, so this module needn't import Lean, and answers file
+  `Services.eval` and reloading through `Services.reload`, so this
+  module needn't import Lean, and answers file
   requests at once (`fileOutcome`), from `Services.root`: a write goes
   beside the file and is renamed over it, and a listing walks the
   folder (`walkDir`) past hidden folders; `collect` turns
-  runs that ended into `Event.done` and `Event.launch`, and `keepFor`
+  runs that ended into `Event.done`, then `Event.reload` with the apps
+  a reload made (a run ends with an `Ending`, its outcome and those
+  apps), and `Event.launch`, and `keepFor`
   stops the runs of windows that are gone.
 - `Eval.lean`: Lean in the desktop. `startBase` imports the REPLs' Lean
-  (`Init`, `LeanMachine.View`, `LeanMachine.Ambient`) on a thread of its
+  (`Init`, `LeanMachine.Ambient`, `LeanMachine.Text`: not the apps) on a thread of its
   own as the desktop starts, and opens `LeanMachine`. `eval` takes a
   line, wraps it in `#eval` if it parses as a term, and elaborates it on
   the calling thread with `runCommands`, its own loop over Lean's
@@ -321,13 +380,19 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   this line leaves open (`openAt`), that's coloured as what it is and
   carried to the next line. `projectRoot` is the desktop's own folder,
   noted as this module compiles (`getFileName`: Lake passes Lean full
-  paths).
+  paths). `reload` parses a file's header, checks that everything it
+  imports is in the REPLs' Lean, and elaborates the rest of the file
+  there, from a fresh `Command.State` (the root namespace, nothing
+  open), with the run's cancel token; with no error, `appsIn` finds the
+  constants of type `App` it added (`constants.map₂`) and `evalConst`
+  makes each a value. The editor gets the Lean after the file, with
+  `LeanMachine` open, as the REPLs' Lean has it.
 - `Main.lean`: `run`, the loop. `feed` steps the desktop through events
   and hands what its apps ask to `Runs`, with the world they asked in. Each pass waits for events, but
   not past 100 ms or the next second (a run that ends wakes it), applies
   them, then the outcomes of runs that ended, stops the runs of windows
   that are gone, ticks with the time, and draws. Also `test`,
-  `testLean`, `testEditor`, `testRuns` and `testMasking` for `--test`
+  `testLean`, `testEditor`, `testReload`, `testRuns` and `testMasking` for `--test`
   (`answerNow` steps an app's state and answers what it asks at once),
   and `main`.
 - `shim.c`: Cairo draws into an image in memory, and SDL3 shows it in
@@ -493,7 +558,7 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   goes from 6 MB to 239 MB, and a clean build takes 6.5 s. A headless
   run of one frame still takes 0.23 s; importing the REPLs' Lean (Init
   and the desktop's modules) takes 125 ms, on a thread of its own, and
-  RSS goes to 485 MB. Importing all of `Lean` would take 1.6 GB, so the
+  RSS goes to 485 MB (483 MB without the apps, since step 7b). Importing all of `Lean` would take 1.6 GB, so the
   REPL's Lean doesn't, and neither may any module it imports: that's
   why `Env` is opaque in `App.lean` and cast (`unsafeCast`) to Lean's
   `Command.State` only in `Eval.lean`. The .olean files of the Lean the
@@ -784,6 +849,72 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   (`Picture.text`, `AppEvent.text`, `Event.text`), so pattern
   variables want names that aren't theirs.
 
+- **Lean can't redefine a declaration.** An environment only grows:
+  there's no taking a declaration out or putting another in its place,
+  which is what reloading is in Schevana (`define` again, and every
+  caller sees the new one). Reloading Clock.lean in the Lean that
+  imported it fails ("`LeanMachine.clockFace` has already been
+  declared"). In a namespace of its own it elaborates, but runs the
+  wrong code, silently: `t.digits` is dot notation, resolved in the
+  type's namespace, so the new clock calls the old, compiled `digits`.
+  A fresh `importModules` of the file's header works, but every import
+  after the first costs about 400 ms and 370 MB that are never freed
+  (the first maps the .olean files; later ones read them into memory),
+  and resets Lean's "run initializers" flag. So the REPLs' Lean doesn't
+  import the apps at all, and each reload elaborates the file's body
+  there, from the same starting point: nothing clashes, and memory
+  stays put. The price: the REPL can't name `clock` or `repl`, only
+  find them in `(← world).catalog`. A file that imports another app's
+  file can't be reloaded, nor can Desktop.lean, which imports them all.
+- **What a reload costs.** Clock.lean takes about 95 ms to elaborate,
+  Placeholder.lean 190, Repl.lean 385, Editor.lean (530 lines) 1.1 s.
+  The same files take 90, 170, 370 and 800 ms in a script on one
+  thread (`lean --run`); why the desktop is slower for the editor
+  wasn't looked into. The safepoints the REPLs' Lean compiles in cost
+  little here: Editor.lean without them took as long.
+- **Reloaded code is interpreted.** A reloaded app runs in Lean's
+  interpreter, as REPL code does, called from the compiled loop. A
+  clock's view takes 220 µs instead of 15 (it computes 60 marks and
+  three hands with `sin` and `cos`), and is drawn in 0.75 ms instead of
+  0.53; an editor's Down, 44 µs instead of 1.7; its view 450 µs instead
+  of 105; a keystroke 135 µs instead of 80 (most of it is Lean's
+  tokenizer, which is compiled either way). Fine for these apps; a frame
+  still fits easily. Without the safepoints it's 3 to 8% faster. Native
+  code would mean a C compiler at run time and `Lean.Dynlib.load`, with
+  new symbol names for each reload, since Lean never unloads a library.
+- **No state carries over.** An app's state is hidden in its closures
+  (`App.asking`), and the new code can't read the old code's state:
+  even with the same structure, the reloaded `Editor` is a type of
+  another environment, and nothing would check a cast between them. So
+  a reloaded app starts afresh, where its window is. Schevana keeps
+  state because data outlives the procedures redefined over it. An app
+  that wanted to keep its state would have to hand it over as plain
+  data (a `String`, or a type from a module that isn't reloaded).
+- **An error reloads nothing.** Lean adds a declaration with an error
+  anyway, with `sorry` in it, and code with `sorry` fails when it runs.
+  So a reload with any error replaces no app, and the editor marks the
+  lines. A file's first error doesn't stop Lean: what comes after it is
+  elaborated too, and all the errors come back at once.
+- **Apps found by their type.** The apps a file defines are the
+  constants it added (`constants.map₂`) whose type is `App`, made values
+  with `evalConst`. They can't come back in the run's `Outcome`, which
+  is part of an `AppEvent`, which an `App` takes: an `Outcome` holding an
+  `App` would make `App` refer to itself on the left of an arrow, and
+  Lean rejects that (positivity). They come back beside it, in how the
+  run ended, and the loop hands them to the world as an `Event`, which
+  apps never see.
+- **Names checked as they compile.** The menu's items are named with
+  ``` ``clock ``` literals, which Lean resolves and checks as it
+  compiles Desktop.lean: renaming `clock` without changing the menu
+  is an error, not a reload that finds nothing. The REPL, without the
+  apps, uses `` `LeanMachine.clock ``, which nothing checks.
+- **Reloads held by undo.** Each reload is a step undo can return to,
+  and the apps in the worlds undo keeps hold the Lean they were made
+  in. 40 reloads of Clock.lean added 11 to 16 MB; 10 of Editor.lean,
+  about 90 MB, 9 MB each. Undo keeps 500 worlds, so many reloads of a
+  big file would add up; Lean frees an environment once nothing refers
+  to it.
+
 ## Ideas for next
 
 - Runs the world declares instead of requests: the world would keep
@@ -814,9 +945,10 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   button always opens the desktop's menu.
 - Resizing windows: an app's `view` already takes its size; its step
   would need to hear it (the editor uses the size it asks for).
-- Reload an app from its file (step 7b): Ctrl+R in the editor, with
-  the REPLs' Lean no longer importing the apps, so that a file's
-  declarations don't clash with themselves.
+- Reloading: hand an app's state to its new code, as plain data;
+  reload a file that imports another app's file (elaborate both,
+  in order); go to the next marked line; reload on save; keep fewer
+  reloads for undo than other steps.
 - The editor: read only the lines in view, and the rest later; select,
   copy and paste; search; undo a keystroke at a time; open a file from
   the REPL; warn before Esc quits with changes not saved.

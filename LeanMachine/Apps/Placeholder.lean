@@ -35,4 +35,8 @@ def placeholder (title : String) : App :=
        | [] => []) ++
       s.dots.map fun (x, y) => .circle x y 5 0xe0af68))
 
+-- The two the menu has.
+def inspector : App := placeholder "Inspector"
+def notes : App := placeholder "Notes"
+
 end LeanMachine

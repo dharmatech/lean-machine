@@ -41,9 +41,12 @@ elab "sourceRoot%" : term => do
 def projectRoot : System.FilePath := sourceRoot%
 
 -- What the REPL's Lean imports: the desktop's pure modules, and what
--- code in a run can reach.
+-- code in a run can reach, but not its apps (LeanMachine/Apps/, nor
+-- View and Desktop, which import them). An app's file is reloaded in this
+-- Lean, and its declarations would clash with themselves here if it had
+-- them already.
 def replImports : Array Name :=
-  #[`Init, `LeanMachine.View, `LeanMachine.Ambient]
+  #[`Init, `LeanMachine.Ambient, `LeanMachine.Text]
 
 /-! ## Safepoints in what the REPL compiles -/
 
@@ -460,5 +463,59 @@ def eval (base : Task (Except IO.Error Held)) (src : String)
   if stopped then
     return .stopped (said.filter fun | .error e => !(e.splitOn stopDetails).length > 1 | _ => true) true
   return .evaluated said (Env.of { h with cmd := { s with traceState := {} } })
+
+/-! ## Reloading an app from its file -/
+
+-- What Lean said about a file, by line and column (from 0).
+def remarksOf (msgs : Array Message) : IO (List Remark) :=
+  msgs.toList.mapM fun m => do
+    let text := (← m.data.toString).trimAscii.toString
+    let said := match m.severity with
+      | .information => Said.info text
+      | .warning => .warning text
+      | .error => .error text
+    return { line := m.pos.line - 1, col := m.pos.column, said }
+
+-- The constants of type `App` that `env` has beyond what it imported,
+-- by name.
+def appsIn (env : Environment) : List Name :=
+  let names := env.constants.map₂.toList.filterMap fun (n, c) =>
+    if c.type == .const ``App [] && !n.isInternal then some n else none
+  (names.toArray.qsort (·.toString < ·.toString)).toList
+
+-- Elaborates the text of a file in the desktop's own Lean, as Lake would
+-- compile it there: what Lean said, the Lean after it (for the editor,
+-- with `LeanMachine` open, as the desktop's own), and, if Lean found no
+-- error, the apps the file defines, by name. The file's header must
+-- import only what the desktop's Lean did, and the rest of the file is
+-- elaborated from the root namespace, with nothing open. Each reload
+-- starts again from the desktop's Lean, so the file's declarations never
+-- meet an earlier reload's. Stops as `eval` does once `cancel` is set.
+def reload (base : Task (Except IO.Error Held)) (path src : String)
+    (cancel : IO.CancelToken) : IO (Outcome × List (Name × App)) := do
+  let h ← IO.ofExcept (← IO.wait base)
+  let ictx := Parser.mkInputContext src path
+  let (header, ps, headerSaid) ← Parser.parseHeader ictx
+  if headerSaid.hasErrors then
+    return (.reloaded (← remarksOf headerSaid.toArray) (Env.of h) [], [])
+  let have_ := h.cmd.env.header.moduleNames
+  let missing := (Elab.headerToImports header).filter (!have_.contains ·.module)
+  unless missing.isEmpty do
+    return (.failed s!"it imports {", ".intercalate (missing.toList.map (toString ·.module))}, \
+      which the desktop's Lean doesn't: only Init and LeanMachine's modules but the apps", [])
+  let s : Command.State :=
+    { Command.mkState h.cmd.env {} (Elab.async.set {} false) with infoState.enabled := false }
+  let (s, msgs, stopped) ← elabCommands ictx ps cancel s
+  if stopped then return (.stopped [] true, [])
+  let said ← remarksOf msgs
+  let env := Env.of { h with cmd := { h.cmd with env := s.env } }
+  if msgs.any (·.severity == .error) then return (.reloaded said env [], [])
+  let mut apps := #[]
+  let mut more := #[]
+  for n in appsIn s.env do
+    match unsafe s.env.evalConst App {} n (checkMeta := false) with
+    | .ok app => apps := apps.push (n, app)
+    | .error why => more := more.push { line := 0, col := 0, said := .error s!"{n}: {why}" }
+  return (.reloaded (said ++ more.toList) env (apps.toList.map (·.1)), apps.toList)
 
 end LeanMachine

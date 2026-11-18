@@ -11,9 +11,17 @@ so a comment that spans lines is coloured as one, and an edit reads
 again only its own line and the lines below that start differently now.
 Ctrl+S saves and Ctrl+O goes back to the list.
 
+Ctrl+R reloads the apps the file defines: the desktop's Lean elaborates
+the file as it is in the editor, saved or not, and if Lean finds no
+error, each app it defines takes the place of the old one, in the menu
+and in every window opened from it. Lines Lean said something about are
+marked, and what it said shows while the cursor is on one. The editor
+then reads the file with the Lean after it, so the file's own names are
+coloured and completed too.
+
 Pure, like the REPL: reading, saving and listing files are requests,
-and so is the desktop's Lean, which colours the file and completes names
-(Tab). -/
+and so are the desktop's Lean, which colours the file and completes names
+(Tab), and reloading. -/
 
 namespace LeanMachine
 
@@ -27,6 +35,9 @@ structure Lexed where
   tokens : Array Token := #[]
   carryIn : Carry := .code
   carry : Carry := .code
+  -- What Lean said about the line at the last reload, by column. It goes
+  -- when the line is edited.
+  said : List (Nat × Said) := []
   deriving Inhabited
 
 -- The file: the lines above the cursor's, nearest first, the cursor's
@@ -137,7 +148,7 @@ def again (env : Env) : Carry → List Lexed → List Lexed
   | c, l :: rest =>
     if l.carryIn == c then l :: rest
     else
-      let l := lexed env c l.text
+      let l := { lexed env c l.text with said := l.said }
       l :: again env l.carry rest
 
 -- After the cursor's line changed: it's read again, and the lines below
@@ -157,13 +168,22 @@ def relexAbove (env : Env) (b : Buffer) : Buffer :=
 -- Every line, from the top: once the editor has its Lean, or a file.
 def lexAll (env : Env) (b : Buffer) : Buffer :=
   let (above, c) := b.above.reverse.foldl (init := ([], Carry.code)) fun (ls, c) l =>
-    let l := lexed env c l.text
+    let l := { lexed env c l.text with said := l.said }
     (l :: ls, l.carry)
-  let here := lexed env c b.line.text
+  let here := { lexed env c b.line.text with said := b.here.said }
   let (below, _) := b.below.foldl (init := ([], here.carry)) fun (ls, c) l =>
-    let l := lexed env c l.text
+    let l := { lexed env c l.text with said := l.said }
     (l :: ls, l.carry)
   { b with above, here, below := below.reverse }
+
+-- What Lean said at a reload goes on the lines it's about, and what it
+-- said before goes.
+def remark (b : Buffer) (said : List Remark) : Buffer :=
+  let on (n : Nat) (l : Lexed) : Lexed :=
+    { l with said := said.filterMap fun r => if r.line == n then some (r.col, r.said) else none }
+  { b with above := b.above.zipIdx.map (fun (l, i) => on (b.row - 1 - i) l),
+           here := on b.row b.here,
+           below := b.below.zipIdx.map fun (l, i) => on (b.row + 1 + i) l }
 
 end Buffer
 
@@ -188,6 +208,7 @@ def edLeanTag : Nat := 0
 def listTag : Nat := 1
 def readTag : Nat := 2
 def writeTag : Nat := 3
+def reloadTag : Nat := 4
 
 structure Editor where
   path : Option String := none   -- the file open; `none`: choosing one
@@ -200,7 +221,9 @@ structure Editor where
   top : Nat := 0                 -- the first line in view
   left : Nat := 0                -- the first column in view
   wheelRest : Float := 0         -- a wheel's turn too small to scroll yet
-  env : Option Env := none       -- the desktop's Lean, once it comes
+  base : Option Env := none      -- the desktop's Lean, once it comes
+  env : Option Env := none       -- that, or the Lean after the file at the last reload
+  reloading : Bool := false
   asked : Option TimeOfDay := none  -- the tick it last asked for what it lacks in
   offer : Option Offer := none
   edits : Nat := 0               -- edits since the file was opened
@@ -229,7 +252,7 @@ def title (e : Editor) : String :=
 -- from. At most once a second, as an undo may bring back an editor
 -- whose answers went to a world that's gone.
 def ask (e : Editor) (t : TimeOfDay) : Option (Editor × List Request) :=
-  let asks := (if e.env.isNone then [Request.eval edLeanTag "" none] else []) ++
+  let asks := (if e.base.isNone then [Request.eval edLeanTag "" none] else []) ++
     (if e.path.isNone && e.files.isEmpty then [.list listTag "."] else [])
   if asks.isEmpty || e.asked == some t then none
   else some ({ e with asked := some t }, asks)
@@ -251,9 +274,12 @@ def vertical (e : Editor) (to : Buffer → Nat → Buffer) : Editor :=
   let goal := e.goal.getD e.buffer.col
   { e with buffer := to e.buffer goal, goal := some goal, offer := none }
 
+-- A file opened is read with the desktop's Lean, not the Lean after a
+-- file reloaded before it.
 def opened (e : Editor) (path text : String) (ms : Nat) : Editor :=
   let b := Buffer.ofText text
-  { e with path := some path, opening := none, buffer := (e.env.map (Buffer.lexAll · b)).getD b,
+  { e with path := some path, opening := none, env := e.base,
+           buffer := (e.base.map (Buffer.lexAll · b)).getD b,
            edits := 0, savedAt := 0, top := 0, left := 0, goal := none, offer := none,
            note := s!"read {b.count} lines in {ms} ms" }
 
@@ -266,6 +292,32 @@ def save (e : Editor) : Option (Editor × List Request) := do
   let path ← e.path
   if e.savingAt.isSome then none
   some ({ e with savingAt := some e.edits, note := "saving…" }, [.write writeTag path e.buffer.text])
+
+-- Ctrl+R: the file, as it is here, saved or not, is reloaded. Again
+-- while a reload goes on starts it over.
+def reload (e : Editor) : Option (Editor × List Request) := do
+  let path ← e.path
+  some ({ e with reloading := true, note := "reloading… Ctrl+C stops it" },
+        [.reload reloadTag path e.buffer.text])
+
+-- The last part of a name: `clock` for `LeanMachine.clock`.
+def lastPart : Lean.Name → String
+  | .str _ s => s
+  | n => toString n
+
+-- What the status line says after a reload.
+def reloadNote (said : List Remark) (apps : List Lean.Name) (ms : Nat) : String :=
+  let errors := said.filter (·.said matches .error _)
+  let warnings := said.filter (·.said matches .warning _)
+  let count (n : Nat) (what : String) := s!"{n} {what}{if n == 1 then "" else "s"}"
+  let took := if ms < 1000 then s!"{ms} ms" else s!"{ms / 1000}.{(ms % 1000) / 100} s"
+  if !errors.isEmpty then
+    let lines := (errors.map (·.line + 1)).eraseDups
+    s!"{count errors.length "error"} (line {", ".intercalate ((lines.take 4).map toString)}\
+      {if lines.length > 4 then ", …" else ""}): nothing reloaded"
+  else
+    let what := if apps.isEmpty then "no app in it" else ", ".intercalate (apps.map lastPart)
+    s!"reloaded in {took}: {what}{if warnings.isEmpty then "" else s!", {count warnings.length "warning"}"}"
 
 -- Tab: the name before the cursor, finished as far as every name it
 -- could become agrees, from the editor's Lean; with no name there, or in
@@ -289,6 +341,9 @@ def editKey (e : Editor) (k : Key) (m : Mods) : Option (Editor × List Request) 
   if m.ctrl then
     match k with
     | .char 's' => e'.save
+    | .char 'r' => e'.reload
+    | .char 'c' =>
+      if e.reloading then some ({ e' with note := "stopping…" }, [.stop reloadTag]) else none
     | .char 'o' =>
       if e.changed && !e.leaving then
         some ({ e with leaving := true, note := "not saved: Ctrl+O again leaves the changes" }, [])
@@ -379,8 +434,8 @@ def ended (e : Editor) (tag : Nat) (o : Outcome) (ms : Nat) : Option Editor :=
   -- Tags: the editor's Lean 0, the files 1, reading 2, saving 3.
   match tag, o with
   | 0, .evaluated _ env =>
-    if e.env.isSome then none
-    else some { e with env := some env, buffer := Buffer.lexAll env e.buffer }
+    if e.base.isSome then none
+    else some { e with base := some env, env := some env, buffer := Buffer.lexAll env e.buffer }
   | 1, .listed paths =>
     some { e with files := (paths.filter (·.endsWith ".lean")).toArray, pick := 0 }
   | 2, .read text => do
@@ -392,6 +447,14 @@ def ended (e : Editor) (tag : Nat) (o : Outcome) (ms : Nat) : Option Editor :=
     some { e with savedAt := at_, savingAt := none, note := s!"saved" }
   | 3, .failed why => some { e with savingAt := none, note := s!"can't save it: {why}" }
   | 1, .failed why => some { e with note := s!"can't list the files: {why}" }
+  -- The file's names are coloured now, and the lines Lean said something
+  -- about marked.
+  | 4, .reloaded said env apps =>
+    if !e.reloading then none else
+    some { e with env := some env, buffer := (Buffer.lexAll env e.buffer).remark said,
+                  reloading := false, note := reloadNote said apps ms }
+  | 4, .stopped .. => some { e with reloading := false, note := "the reload stopped" }
+  | 4, .failed why => some { e with reloading := false, note := s!"can't reload it: {why}" }
   | _, _ => none
 
 def heard (e : Editor) : AppEvent → Option (Editor × List Request)
@@ -414,6 +477,22 @@ end Editor
 /-! ## How it looks -/
 
 def gutterRgb : UInt32 := 0x3b4261
+
+def Said.rgb : Said → UInt32
+  | .error _ => 0xf7768e
+  | .warning _ => 0xe0af68
+  | .info _ => 0x7aa2f7
+
+def Said.text : Said → String
+  | .error s | .warning s | .info s => s
+
+-- The colour a line's number is marked with: what Lean said worst about
+-- it, if anything.
+def Lexed.mark? (l : Lexed) : Option UInt32 :=
+  let is (p : Said → Bool) := l.said.any (p ·.2)
+  if is (· matches .error _) then some (Said.rgb (.error ""))
+  else if is (· matches .warning _) then some (Said.rgb (.warning ""))
+  else if l.said.isEmpty then none else some (Said.rgb (.info ""))
 def hereRgb : UInt32 := 0x1f2335    -- behind the cursor's line
 def statusRgb : UInt32 := 0x16161e
 
@@ -460,7 +539,7 @@ def viewFile (e : Editor) (w h : Float) : List Picture :=
   let lineRows := rows.zipIdx.flatMap fun ((n, l), i) =>
     let y := rowY i + 14
     (if n == b.row then [.rect 0 (rowY i) w edLineH 0 hereRgb] else []) ++
-    [.mono edPad y edFont (if n == b.row then 0x737aa2 else gutterRgb)
+    [.mono edPad y edFont (l.mark?.getD (if n == b.row then 0x737aa2 else gutterRgb))
       (rightAligned (n + 1) (gutterCols - 1))] ++
     drawRow textX y (lexedRow l e.left edCols)
   let cursorAt := if e.top ≤ b.row && b.row < e.top + edRows && e.left ≤ b.col then
@@ -481,14 +560,31 @@ def viewFile (e : Editor) (w h : Float) : List Picture :=
       [.rect x y boxW boxH 4 0x414868, .rect (x + 1) (y + 1) (boxW - 2) (boxH - 2) 4 0x24283b] ++
       rows.zipIdx.flatMap fun (row, i) => drawRow (x + 6) (y + 4 + edLineH * i.toFloat + 14) row
     | none => []
+  -- What Lean said about the cursor's line at the last reload, in a box
+  -- across the bottom, or the top if the cursor is down there.
+  let said : List Picture :=
+    let cols := ((w - 2 * edPad - 12) / adv).floor.toUInt64.toNat
+    let all := b.here.said.flatMap fun (col, s) =>
+      lines s!"{b.row + 1}:{col + 1}: {s.text}" s.rgb cols
+    if all.isEmpty then [] else
+    let most := 8
+    let rows := if all.length ≤ most then all
+      else all.take (most - 1) ++ lines "…" 0x565f89 cols
+    let boxH := edLineH * rows.length.toFloat + 8
+    let bottom := h - edStatusH - boxH - 4
+    let y := if rowY (b.row - e.top) + edLineH > bottom then 4 else bottom
+    [.rect 4 y (w - 8) boxH 4 0x414868, .rect 5 (y + 1) (w - 10) (boxH - 2) 4 0x24283b] ++
+    rows.zipIdx.flatMap fun (row, i) => drawRow (edPad + 2) (y + 4 + edLineH * i.toFloat + 14) row
   let path := e.path.getD ""
   let state := if e.savingAt.isSome then "saving…" else if e.changed then "changed" else "saved"
   let status := s!"{path}   {b.row + 1}:{b.col + 1}   {if e.note.isEmpty then state else e.note}"
-  lineRows ++ cursorAt ++ offered ++
+  lineRows ++ cursorAt ++ said ++ offered ++
     [.rect 0 (h - edStatusH) w edStatusH 0 statusRgb,
-     .mono edPad (h - 7) 13 (if e.changed then 0xe0af68 else 0x9aa5ce) status,
-     .textIn 0 (h - edStatusH) (w - edPad) edStatusH 12 .right 0x565f89
-       "Ctrl+S save · Ctrl+O files"]
+     .mono edPad (h - 7) 13 (if e.changed then 0xe0af68 else 0x9aa5ce) status] ++
+    -- What keys do, unless a note needs the room.
+    (if e.note.isEmpty then
+      [.textIn 0 (h - edStatusH) (w - edPad) edStatusH 12 .right 0x565f89
+        "Ctrl+S save · Ctrl+R reload · Ctrl+O files"] else [])
 
 def viewFiles (e : Editor) (w _h : Float) : List Picture :=
   let adv := monoAdvance edFont
