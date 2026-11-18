@@ -196,12 +196,6 @@ def edPad : Float := 8
 def edStatusH : Float := 24
 def gutterCols : Nat := 5       -- line numbers up to 9999, and a space
 
--- How many lines and columns of the file the editor shows. Windows don't
--- change size yet, so it's the size the editor asks for.
-def edRows : Nat := ((editorSize.2 - 2 * edPad - edStatusH) / edLineH).floor.toUInt64.toNat
-def edCols : Nat :=
-  ((editorSize.1 - 2 * edPad) / monoAdvance edFont).floor.toUInt64.toNat - gutterCols
-
 -- The runs the editor waits for, by tag. Each kind has a tag of its
 -- own, so a new request replaces only one of its own kind.
 def edLeanTag : Nat := 0
@@ -231,10 +225,20 @@ structure Editor where
   savingAt : Option Nat := none
   leaving : Bool := false        -- Ctrl+O pressed once with changes not saved
   note : String := ""            -- what the status line says last
+  -- The body's size, as the window last said it. The step needs it, to
+  -- keep the cursor in view and to find the line a press lands on.
+  size : Float × Float := editorSize
 
 namespace Editor
 
 def changed (e : Editor) : Bool := e.edits != e.savedAt
+
+-- How many lines and columns of the file the editor shows, at its size;
+-- at least one of each.
+def rows (e : Editor) : Nat :=
+  max 1 ((e.size.2 - 2 * edPad - edStatusH) / edLineH).floor.toUInt64.toNat
+def cols (e : Editor) : Nat :=
+  max 1 (((e.size.1 - 2 * edPad) / monoAdvance edFont).floor.toUInt64.toNat - gutterCols)
 
 -- The files shown: those whose path has what's typed in it, any case.
 def shown (e : Editor) : Array String :=
@@ -352,7 +356,7 @@ def editKey (e : Editor) (k : Key) (m : Mods) : Option (Editor × List Request) 
     | .«end» => some (e'.move fun b => b.goTo (b.count - 1) 0 |> fun b => { b with line := b.line.toEnd }, [])
     | _ => none
   else
-    let page := edRows - 1
+    let page := e.rows - 1
     let e := e'
     match k with
     | .enter => some (e.edit Buffer.enter Buffer.relexAbove, [])
@@ -384,36 +388,40 @@ def chooseKey (e : Editor) (k : Key) : Option (Editor × List Request) :=
     some ({ e with opening := some path, note := s!"reading {path}…" }, [.read readTag path])
   | _ => none
 
--- The first line in view, and the first column, after the cursor moved:
--- as they were if the cursor is still in view, or as little changed as
--- brings it in.
+-- The first line in view, and the first column, after the cursor moved
+-- or the editor changed size: as they were if the cursor is still in
+-- view, or as little changed as brings it in, with a few columns to
+-- spare on the side it went out of.
 def follow (e : Editor) : Editor :=
   let row := e.buffer.row
   let col := e.buffer.col
-  let top := if row < e.top then row else if row ≥ e.top + edRows then row + 1 - edRows else e.top
-  let left := if col < e.left then col - min col 8
-    else if col ≥ e.left + edCols then col + 9 - edCols else e.left
+  let top := if row < e.top then row else if row ≥ e.top + e.rows then row + 1 - e.rows else e.top
+  let spare := min 8 (e.cols / 3)
+  let left := if col < e.left then col - min col spare
+    else if col ≥ e.left + e.cols then col + 1 + spare - e.cols else e.left
   { e with top, left }
 
--- Where a press lands: the line and column of the file, or the file shown.
-def listTopFor (pick : Nat) : Nat := if pick < edRows - 2 then 0 else pick + 3 - edRows
+-- The first file shown in a list `rows` lines high, with file `pick`
+-- chosen: rows 0 and 1 are the heading and what's typed.
+def listTopFor (rows pick : Nat) : Nat := if pick + 2 < rows then 0 else pick + 3 - rows
 
 def textX : Float := edPad + gutterCols.toFloat * monoAdvance edFont
 
+-- Where a press lands: the line and column of the file, or the file shown.
 def pressed (e : Editor) (x y : Float) : Option (Editor × List Request) :=
   let row := ((y - edPad) / edLineH).floor
   if row < 0 then none else
   let row := row.toUInt64.toNat
   match e.path with
   | some _ =>
-    if row ≥ edRows then none else
+    if row ≥ e.rows then none else
     let col := ((x - textX) / monoAdvance edFont).round
     let col := if col < 0 then 0 else col.toUInt64.toNat
     some (e.move (·.goTo (e.top + row) (e.left + col)), [])
   | none =>
     -- Rows 0 and 1 are the heading and what's typed.
     if row < 2 then none else
-    let pick := listTopFor e.pick + row - 2
+    let pick := listTopFor e.rows e.pick + row - 2
     if pick < e.shown.size then
       { e with pick }.chooseKey .enter
     else none
@@ -461,6 +469,9 @@ def heard (e : Editor) : AppEvent → Option (Editor × List Request)
   | .tick t => e.ask t
   | .done tag o ms => (e.ended tag o ms).map (·, [])
   | .wheel _ _ dy => e.wheel dy
+  | .resize w h =>
+    let e := { e with size := (w, h) }
+    some (if e.path.isSome then e.follow else e, [])
   | .press x y => (e.pressed x y).map fun (e, asks) => (e.follow, asks)
   | .text s =>
     match e.path with
@@ -518,7 +529,7 @@ namespace Editor
 -- The lines in view, with their numbers from 0, top to bottom.
 def inView (e : Editor) : List (Nat × Lexed) :=
   let b := e.buffer
-  let bottom := e.top + edRows
+  let bottom := e.top + e.rows
   let aboveTo := min bottom b.row          -- lines from `top` up to there are above
   let aboveShown := if e.top < aboveTo
     then ((b.above.drop (b.row - aboveTo)).take (aboveTo - e.top)).reverse else []
@@ -541,8 +552,8 @@ def viewFile (e : Editor) (w h : Float) : List Picture :=
     (if n == b.row then [.rect 0 (rowY i) w edLineH 0 hereRgb] else []) ++
     [.mono edPad y edFont (l.mark?.getD (if n == b.row then 0x737aa2 else gutterRgb))
       (rightAligned (n + 1) (gutterCols - 1))] ++
-    drawRow textX y (lexedRow l e.left edCols)
-  let cursorAt := if e.top ≤ b.row && b.row < e.top + edRows && e.left ≤ b.col then
+    drawRow textX y (lexedRow l e.left e.cols)
+  let cursorAt := if e.top ≤ b.row && b.row < e.top + e.rows && e.left ≤ b.col then
       [Picture.rect (textX + adv * (b.col - e.left).toFloat - 1) (rowY (b.row - e.top) + 2) 2
         (edLineH - 4) 0 0xbb9af7]
     else []
@@ -555,7 +566,7 @@ def viewFile (e : Editor) (w h : Float) : List Picture :=
       let boxW := adv * width.toFloat + 12
       let boxH := edLineH * rows.length.toFloat + 8
       let r := b.row - e.top
-      let y := if r + 1 + rows.length ≤ edRows then rowY (r + 1) else rowY r - boxH
+      let y := if r + 1 + rows.length ≤ e.rows then rowY (r + 1) else rowY r - boxH
       let x := min (w - boxW - 4) (textX + adv * ((b.col - min b.col (wordBefore b.line.before).length) - e.left).toFloat - 6)
       [.rect x y boxW boxH 4 0x414868, .rect (x + 1) (y + 1) (boxW - 2) (boxH - 2) 4 0x24283b] ++
       rows.zipIdx.flatMap fun (row, i) => drawRow (x + 6) (y + 4 + edLineH * i.toFloat + 14) row
@@ -581,16 +592,17 @@ def viewFile (e : Editor) (w h : Float) : List Picture :=
   lineRows ++ cursorAt ++ said ++ offered ++
     [.rect 0 (h - edStatusH) w edStatusH 0 statusRgb,
      .mono edPad (h - 7) 13 (if e.changed then 0xe0af68 else 0x9aa5ce) status] ++
-    -- What keys do, unless a note needs the room.
+    -- What keys do, unless a note needs the room, clear of the window's
+    -- grip.
     (if e.note.isEmpty then
-      [.textIn 0 (h - edStatusH) (w - edPad) edStatusH 12 .right 0x565f89
+      [.textIn 0 (h - edStatusH) (w - edPad - gripSize) edStatusH 12 .right 0x565f89
         "Ctrl+S save · Ctrl+R reload · Ctrl+O files"] else [])
 
 def viewFiles (e : Editor) (w _h : Float) : List Picture :=
   let adv := monoAdvance edFont
   let shown := e.shown
-  let top := listTopFor e.pick
-  let rows := (shown.toList.drop top).take (edRows - 2)
+  let top := listTopFor e.rows e.pick
+  let rows := (shown.toList.drop top).take (e.rows - 2)
   let heading := if e.files.isEmpty then (if e.note.isEmpty then "looking for files…" else e.note)
     else if e.opening.isSome then e.note
     else if e.note.isEmpty then s!"{shown.size} of {e.files.size} Lean files: type to narrow, Up, Down, Enter"

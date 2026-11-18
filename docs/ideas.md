@@ -26,8 +26,12 @@
   worth returning to (Enter in a REPL, say).
 - Right-click for apps too, perhaps a window menu, now that the right
   button always opens the desktop's menu.
-- Resizing windows: an app's `view` already takes its size; its step
-  would need to hear it (the editor uses the size it asks for).
+- Windows: maximize and restore (a window would keep the `Rect` to go
+  back to), minimize to the bar, tile and cascade. Each computes
+  rectangles and calls `World.place`.
+- Resizing: the pointer's shape over an edge (SDL's system cursors,
+  through the shim); a minimum size an app asks for, not only the
+  desktop's; keys to move and resize the focused window.
 - Reloading: hand an app's state to its new code, as plain data;
   reload a file that imports another app's file (elaborate both,
   in order); go to the next marked line; reload on save; keep fewer

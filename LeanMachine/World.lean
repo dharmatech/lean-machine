@@ -3,11 +3,12 @@ import LeanMachine.App
 /-! # The world: windows, the pointer, the menu, and what an event does
 
 Pure: `World.step` makes a new world and changes nothing. Each window
-holds an app. The world drags, raises and closes windows, opens apps from
-its menu, passes ticks to every app, and passes other events, keys and
-text included, to the focused window's app. What apps ask for waits in
-the world's outbox, marked with the window that asked, until the loop
-takes it; the outcome of a run goes back to that window. -/
+holds an app. The world moves, resizes, raises and closes windows, opens
+apps from its menu, tells apps their size, passes ticks to every app,
+and passes other events, keys and text included, to the focused
+window's app. What apps ask for waits in the world's outbox, marked with
+the window that asked, until the loop takes it; the outcome of a run
+goes back to that window. -/
 
 namespace LeanMachine
 
@@ -16,6 +17,55 @@ def screenH : Float := 800
 def barH : Float := 30        -- the bar along the bottom
 def titleH : Float := 28
 def frame : Float := 3        -- a window's edge, beside and below its body
+-- A window can't be made smaller than this by hand: its title keeps room
+-- for the close box, and its body for a few lines of the editor.
+def minW : Float := 200
+def minH : Float := 140
+-- How far outside a window its edges can be grabbed: the frame alone is
+-- too thin to find.
+def reach : Float := 4
+-- How near a corner a grab on one edge takes the other edge too.
+def corner : Float := 16
+
+-- A window's place on the screen: its corner, and its size with the
+-- title and frame.
+structure Rect where
+  x : Float
+  y : Float
+  w : Float
+  h : Float
+  deriving BEq, Inhabited, Repr
+
+-- The edges of a window a drag moves. A title moves all four, which
+-- moves the window; an edge moves one, and a corner two, which resizes it.
+structure Edges where
+  left : Bool := false
+  top : Bool := false
+  right : Bool := false
+  bottom : Bool := false
+  deriving BEq, Inhabited, Repr
+
+def Edges.all : Edges := ⟨true, true, true, true⟩
+def Edges.any (e : Edges) : Bool := e.left || e.top || e.right || e.bottom
+
+-- `v`, or the nearer of `lo` and `hi` if it's outside them (`lo` if they
+-- cross).
+def between (lo hi v : Float) : Float := max lo (min hi v)
+
+-- `r` with the edges `es` moved by (dx, dy). All four move it. Fewer
+-- resize it, no smaller than `minW` by `minH`, and an edge moved stops at
+-- the edge of the desktop (or where it was, if it was past it).
+def Rect.drag (r : Rect) (es : Edges) (dx dy : Float) : Rect :=
+  if es == .all then { r with x := r.x + dx, y := r.y + dy } else
+  let right := r.x + r.w
+  let bottom := r.y + r.h
+  let left := if es.left then between (min 0 r.x) (right - minW) (r.x + dx) else r.x
+  let top := if es.top then between (min 0 r.y) (bottom - minH) (r.y + dy) else r.y
+  let right := if es.right then between (left + minW) (max screenW right) (right + dx)
+    else right
+  let bottom := if es.bottom then between (top + minH) (max (screenH - barH) bottom) (bottom + dy)
+    else bottom
+  ⟨left, top, right - left, bottom - top⟩
 
 inductive Event where
   | quit
@@ -59,11 +109,16 @@ def Win.bodyY (w : Win) : Float := w.y + titleH
 def Win.bodyW (w : Win) : Float := w.w - 2 * frame
 def Win.bodyH (w : Win) : Float := w.h - titleH - frame
 
--- Where the pointer grabbed a window's title, from its corner.
+def Win.rect (w : Win) : Rect := ⟨w.x, w.y, w.w, w.h⟩
+
+-- A window being dragged: the edges that move, and where the window and
+-- the pointer were at the press.
 structure Drag where
   id : Nat
-  dx : Float
-  dy : Float
+  edges : Edges
+  start : Rect
+  px : Float
+  py : Float
 
 -- The menu that opens apps: where its corner is. Its items are the
 -- world's catalog, one per app.
@@ -113,7 +168,24 @@ def Win.onClose (w : Win) (x y : Float) : Bool :=
 def Win.inBody (w : Win) (x y : Float) : Bool :=
   w.bodyX ≤ x && x < w.bodyX + w.bodyW && w.bodyY ≤ y && y < w.bodyY + w.bodyH
 
-def Win.moveTo (w : Win) (x y : Float) : Win := { w with x := x, y := y }
+-- The edges a press at (x, y) grabs: within `reach` outside the window,
+-- or in its frame (on top, the title's first `frame` pixels). Near a
+-- corner, or on the grip, both of the corner's edges. None elsewhere.
+def Win.edgesAt (w : Win) (x y : Float) : Edges :=
+  let right := w.x + w.w
+  let bottom := w.y + w.h
+  if !(w.x - reach ≤ x && x < right + reach && w.y - reach ≤ y && y < bottom + reach) then {}
+  else if x ≥ right - frame - gripSize && y ≥ bottom - frame - gripSize then
+    { right := true, bottom := true }
+  else
+    let l := x < w.x + frame
+    let r := x ≥ right - frame
+    let t := y < w.y + frame
+    let b := y ≥ bottom - frame
+    { left := l || (t || b) && x < w.x + corner,
+      right := r || (t || b) && x ≥ right - corner,
+      top := t || (l || r) && y < w.y + corner,
+      bottom := b || (l || r) && y ≥ bottom - corner }
 
 -- `e` as the window's app hears it, moved into the app's coordinates.
 def Win.toApp (w : Win) : Event → Option AppEvent
@@ -127,24 +199,55 @@ def Win.toApp (w : Win) : Event → Option AppEvent
   | .wheel x y dy => some (.wheel (x - w.bodyX) (y - w.bodyY) dy)
   | .menu .. | .launch .. | .reload .. | .quit => none
 
--- The window after its app hears `e`, and what the app asked for.
-def Win.hear (w : Win) (e : Event) : Win × List Asked :=
-  match (w.toApp e).bind w.app.step with
+-- The window after its app hears `e`, in the app's own terms already,
+-- and what the app asked for.
+def Win.heed (w : Win) (e : AppEvent) : Win × List Asked :=
+  match w.app.step e with
   | some (app, asks) => ({ w with app }, asks.map (⟨w.id, ·⟩))
   | none => (w, [])
+
+-- The window after its app hears `e`, and what the app asked for.
+def Win.hear (w : Win) (e : Event) : Win × List Asked :=
+  match w.toApp e with
+  | some e => w.heed e
+  | none => (w, [])
+
+-- The window at `r`. If its body's size changed, its app hears the new
+-- size; a move alone tells it nothing.
+def Win.place (w : Win) (r : Rect) : Win × List Asked :=
+  let moved := { w with x := r.x, y := r.y, w := r.w, h := r.h }
+  if moved.bodyW == w.bodyW && moved.bodyH == w.bodyH then (moved, [])
+  else moved.heed (.resize moved.bodyW moved.bodyH)
 
 def World.hit (world : World) (x y : Float) : Option Win :=
   world.windows.reverse.find? (·.contains x y)
 
+-- What a press at (x, y) lands on: the frontmost window it's in or near
+-- enough to grab an edge of, and the edges it grabs (none: inside, away
+-- from the edges).
+def World.grabAt (world : World) (x y : Float) : Option (Win × Edges) :=
+  world.windows.reverse.findSome? fun w =>
+    let es := w.edgesAt x y
+    if es.any || w.contains x y then some (w, es) else none
+
 def World.raise (world : World) (w : Win) : List Win :=
   world.windows.filter (·.id != w.id) ++ [w]
 
--- The world after the apps of the windows `pick` chooses hear `e`, with
--- what they asked for in the outbox.
-def World.tell (world : World) (pick : Win → Bool) (e : Event) : World :=
+-- The world after `f` changes the windows `pick` chooses, with what
+-- their apps asked for in the outbox.
+def World.each (world : World) (pick : Win → Bool) (f : Win → Win × List Asked) : World :=
   let (windows, asked) := (world.windows.map fun w =>
-    if pick w then w.hear e else (w, [])).unzip
+    if pick w then f w else (w, [])).unzip
   { world with windows, outbox := asked.flatten.reverse ++ world.outbox }
+
+-- The world after the apps of the windows `pick` chooses hear `e`.
+def World.tell (world : World) (pick : Win → Bool) (e : Event) : World :=
+  world.each pick (·.hear e)
+
+-- Window `id` at `r`, its app told its new size. A drag places a window
+-- at every motion; maximizing, tiling and cascading would place them too.
+def World.place (world : World) (id : Nat) (r : Rect) : World :=
+  world.each (·.id == id) (·.place r)
 
 def World.toFocus (world : World) (e : Event) : World :=
   world.tell (·.id == world.focus) e
@@ -153,17 +256,20 @@ def World.toAll (world : World) (e : Event) : World :=
   world.tell (fun _ => true) e
 
 -- Window `n` holding `app`, as it starts, at (x, y) or as near as keeps
--- it on the screen. The app hears the time first, so a clock is right
--- from its first frame; what it asks for then goes in the outbox.
+-- it on the screen, its body `size` (none: the size the app asks for).
+-- The app hears its size first, then the time, so a clock is right from
+-- its first frame; what it asks for then goes in the outbox.
 def World.fresh (world : World) (n : Nat) (app : App) (x y : Float)
-    (origin : Option Lean.Name) : Win × World :=
-  let (app, asks) := (app.step (.tick world.time)).getD (app, [])
-  let w := app.size.1 + 2 * frame
-  let h := app.size.2 + titleH + frame
-  ({ id := n, app, w, h, origin,
-     x := max 0 (min x (screenW - w)),
-     y := max 0 (min y (screenH - barH - h)) },
-   { world with outbox := (asks.map (⟨n, ·⟩)).reverse ++ world.outbox })
+    (origin : Option Lean.Name) (size : Option (Float × Float) := none) : Win × World :=
+  let (bw, bh) := size.getD app.size
+  let w := bw + 2 * frame
+  let h := bh + titleH + frame
+  let win : Win := { id := n, app, w, h, origin,
+                     x := max 0 (min x (screenW - w)),
+                     y := max 0 (min y (screenH - barH - h)) }
+  let (win, sized) := win.heed (.resize win.bodyW win.bodyH)
+  let (win, timed) := win.heed (.tick world.time)
+  (win, { world with outbox := (sized ++ timed).reverse ++ world.outbox })
 
 -- A new window holding `app`, with its corner at (x, y) or as near as
 -- keeps it on the screen, in front and focused.
@@ -176,10 +282,10 @@ def World.launch (world : World) (app : App) (x y : Float)
 -- `app`, the new code of the declaration `name`, made by a reload that
 -- window `win` asked for. It takes the old app's place in the menu (or
 -- goes at the end of it), and in every window opened from it, where the
--- window is, as it starts: its state was in the old app's closures, which
--- the new code can't read. Not in window `win`: an editor that reloads
--- its own file keeps it. When no other window has it, it opens in a new
--- one beside `win`.
+-- window is and at its size, as it starts: its state was in the old
+-- app's closures, which the new code can't read. Not in window `win`:
+-- an editor that reloads its own file keeps it. When no other window has
+-- it, it opens in a new one beside `win`.
 def World.reload (world : World) (win : Nat) (name : Lean.Name) (app : App) : World :=
   let catalog := if world.catalog.any (·.1 == name)
     then world.catalog.map fun (n, a) => (n, if n == name then app else a)
@@ -188,7 +294,7 @@ def World.reload (world : World) (win : Nat) (name : Lean.Name) (app : App) : Wo
   if world.windows.any fun w => w.origin == some name && w.id != win then
     world.windows.foldl (init := { world with windows := [] }) fun world w =>
       if w.origin == some name && w.id != win then
-        let (w, world) := world.fresh w.id app w.x w.y (some name)
+        let (w, world) := world.fresh w.id app w.x w.y (some name) (some (w.bodyW, w.bodyH))
         { world with windows := world.windows ++ [w] }
       else { world with windows := world.windows ++ [w] }
   else match world.windows.find? (·.id == win) with
@@ -203,25 +309,24 @@ def World.openMenu (world : World) (x y : Float) : World :=
 -- What an event does to the windows, with no menu in the way.
 def World.stepWindows (world : World) : Event → World
   | .press x y =>
-    match world.hit x y with
+    match world.grabAt x y with
     | none => { world with focus := 0 }
-    | some w =>
-      if w.onClose x y then
+    | some (w, es) =>
+      if !es.any && w.onClose x y then
         { world with windows := world.windows.filter (·.id != w.id),
                      focus := 0 }
       else
         let world := { world with windows := world.raise w, focus := w.id }
-        if w.onTitle x y then
-          { world with drag := some ⟨w.id, x - w.x, y - w.y⟩ }
+        let grab (es : Edges) : World := { world with drag := some ⟨w.id, es, w.rect, x, y⟩ }
+        if es.any then grab es                 -- an edge or a corner: resizes it
+        else if w.onTitle x y then grab .all   -- the title: moves it
         else if w.inBody x y then world.toFocus (.press x y)
-        else world   -- the frame's edge
+        else world
   | .motion x y =>
     let world := { world with mouseX := x, mouseY := y }
     match world.drag with
     | none => world.toFocus (.motion x y)
-    | some d =>
-      { world with windows := world.windows.map fun w =>
-          if w.id == d.id then w.moveTo (x - d.dx) (y - d.dy) else w }
+    | some d => world.place d.id (d.start.drag d.edges (x - d.px) (y - d.py))
   | .release x y =>
     if world.drag.isSome then { world with drag := none }
     else world.toFocus (.release x y)

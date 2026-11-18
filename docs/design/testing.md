@@ -33,6 +33,21 @@ compiled code ten times in the middle of `Ref.modify`, and ten times
 while it holds a mutex, with masking off and then on, and says how
 often the ref was left taken or the mutex locked.
 
+Right after the first script and the REPL typed into, before the
+highlighting, `--test` resizes windows. From the start desktop it drags Notes by its grip,
+moves it by its title, drags Inspector's left edge past the smallest
+width, the REPL's top edge (grabbed from just above it) past the top
+of the desktop, and Clock's bottom left corner past the bar. After each
+drag it prints the window's rectangle, and, for Notes and Inspector, the
+size they show beside the size they heard (`resize.png`, the pointer
+just right of Notes, its edge lit). Then it undoes once, and again. An
+editor alone is told sizes: its rows, columns, first line and column
+in view, and where a press lands, down to the smallest window. On the
+desktop, an editor on Clock.lean, its cursor on line 31, is made 300
+shorter by its bottom edge (`resize-editor.png`), and the cursor's line
+is still in view. Undo puts the size back. Last, Clock is made wider by
+its left edge and reloaded from the editor, and it keeps that size.
+
 Between the REPL's highlighting and its runs, `--test` tries the
 editor. It prints the tokens of six lines of a file that leave a
 comment, a nested comment, a string and a doc comment open for the next

@@ -144,6 +144,15 @@ inductive AppEvent where
   -- The wheel turned with the pointer at (x, y): `dy` steps away from
   -- the user (up the page), maybe a fraction of one, from a touchpad.
   | wheel (x y dy : Float)
+  -- The window's body is `w` by `h` now: as the window opens, before the
+  -- first tick, and whenever its size changes. A view is given the same
+  -- size; a step that needs it (how many lines fit) keeps it in its state.
+  | resize (w h : Float)
+
+-- The side of the grip the desktop draws in the bottom right corner of
+-- a window's body, over the app: a press there resizes the window. An
+-- app can keep what matters out of that corner.
+def gripSize : Float := 12
 
 -- `step` returns `none` when the event changes nothing and asks for
 -- nothing. It can't return an `App` every time: a type whose every value
@@ -152,7 +161,7 @@ structure App where
   title : String
   view : Float → Float → Picture          -- at a width and height
   step : AppEvent → Option (App × List Request) := fun _ => none
-  size : Float × Float := (414, 229)      -- the body a new window gives it
+  size : Float × Float := (414, 229)      -- the body a new window gives it, at first
 
 instance : Inhabited App := ⟨{ title := "", view := fun _ _ => .group [] }⟩
 

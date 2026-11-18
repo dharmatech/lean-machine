@@ -17,6 +17,9 @@ as the REPL colours a line, with comments and strings that span lines
 name before the cursor from the desktop's Lean (`TimeOfDay.` offers its
 fields), or indents.
 
+Resize its window and it shows more or fewer lines and columns, with
+the cursor still in view.
+
 Ctrl+S saves (the title's `•` says there are
 changes not saved), Ctrl+O goes back to the list (twice, if there are
 changes not saved). Esc still quits the desktop, changes and all.

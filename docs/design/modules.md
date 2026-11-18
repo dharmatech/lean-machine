@@ -25,7 +25,7 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
 - `App.lean`: an `App` is a value with a title, a `view` at a given
   size, a `step` that returns the app an event makes and the requests
   it makes then (`none`: no change, nothing asked), and the `size` a new
-  window gives it. A `Request` asks the loop to `run` work, a pure
+  window gives it at first. A `Request` asks the loop to `run` work, a pure
   function `Unit → String`, or to `eval` a line of Lean in an `Env`,
   under a tag the app chooses, or to `stop` the run with a tag; the
   `Outcome` (a value; what Lean said, as `Said` messages, and the `Env`
@@ -50,8 +50,10 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   in one list, and can take the title from the state (`titleOf`);
   `App.of` makes one that never asks. `AppEvent` is an
   event in the app's own coordinates, a key with its modifiers, typed
-  text, a turn of the wheel, a tick with the `TimeOfDay`, or a run's
-  outcome (`done`).
+  text, a turn of the wheel, a tick with the `TimeOfDay`, a run's
+  outcome (`done`), or the body's size (`resize`), heard as the window
+  opens and whenever its size changes. `gripSize` is the corner of the
+  body the desktop's grip covers.
 - `Safepoint.lean`: what compiled code calls where a stop may reach it.
   `poll x` is `x`, a safepoint in C. `safepoint` and `interruptNow` are
   the calls the REPL's Lean puts at the start of every function it
@@ -86,11 +88,11 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   (`Lexed.said`, `Buffer.remark`), so the marks move with the lines;
   a line read again after an edit loses its own. The editor keeps the
   desktop's Lean (`base`) and the Lean it reads the file with (`env`),
-  the Lean after the file once it's reloaded. `follow` keeps the cursor in
-  view; the step can't know the window's size, so it uses the size the
-  editor asks for (`editorSize`), as windows don't change size yet. The
-  title, from the state, is the file's name, with `•` when it has
-  changes not saved.
+  the Lean after the file once it's reloaded. The editor keeps the
+  body's size from the last `resize` it heard (`editorSize` until then),
+  and its `rows` and `cols` from that; `follow` keeps the cursor in view
+  after a move or a resize. The title, from the state, is the file's
+  name, with `•` when it has changes not saved.
 - `Apps/Repl.lean`: a line editor over a transcript. A new REPL asks
   for the desktop's own Lean when it hears its first tick (an empty
   line evaluated there, under a tag of its own; again each second while
@@ -120,11 +122,12 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   share, and keeps the rest as an `Offer` drawn under the line, in
   columns, without the namespace typed, until the line changes.
 - `Apps/Placeholder.lean`: stands in for apps not written yet. A click
-  drops a dot where it lands; it shows what was typed into it and the
-  last key it heard. `inspector` and `notes` are the menu's two.
+  drops a dot where it lands; it shows what was typed into it, the
+  last key it heard, and its size beside the size it heard.
+  `inspector` and `notes` are the menu's two.
 - `World.lean`: windows, the pointer, the menu and events. Each window
-  holds an app. `World.step : World → Event → World` drags, raises,
-  focuses and closes windows, passes ticks to every app, and passes other
+  holds an app. `World.step : World → Event → World` moves, resizes,
+  raises, focuses and closes windows, passes ticks to every app, and passes other
   events, keys and text included, to the focused window's app, moved
   into the app's coordinates; a run's outcome (`Event.done`) goes to the
   window that asked for it, and an app a run launched (`Event.launch`)
@@ -132,15 +135,22 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   focused or not. What apps ask for waits in the world's
   `outbox`, marked with the window, until the loop takes it
   (`takeAsked`). Ctrl+Shift+N opens the menu at the pointer.
+  A window's place is a `Rect`. A press on a title or near an edge
+  (`World.grabAt`, `Win.edgesAt`: up to `reach` outside the window, in
+  its frame, near a corner, on the grip) starts a `Drag` of some
+  `Edges`, all four for a title; each motion places the window at
+  `Rect.drag` of where it started, no smaller than `minW` by `minH`
+  when resizing. `World.place` is the one way a window changes place:
+  its app hears `resize` when its body's size changes.
   The world holds a `catalog` of apps, the menu's items, each by the
   name of its declaration (`LeanMachine.clock`), and each window
   remembers the declaration its app came from (`Win.origin`; none for
   an app a REPL launched). `World.launch` opens an app in a new window,
-  kept on the screen and told the time first. A reload's apps
+  kept on the screen and told its size, then the time. A reload's apps
   (`Event.reload`) go through `World.reload`: each replaces the menu's
   item of its name, or is added, and the app of every window opened
   from it, but the window that asked; it starts afresh there
-  (`World.fresh`), the window's size its own. With no such window, it
+  (`World.fresh`), at the window's place and size. With no such window, it
   opens one beside the window that asked. `World.commits` says which
   events start a step undo can return to: a press that does something,
   and a reload.
@@ -153,8 +163,10 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   and `start`, the desktop the program starts with, opened with
   `launch` as the menu would.
 - `View.lean`: `Desktop.view` returns a `Picture`. Each app's view is
-  moved to its window's body and cut to it. The menu draws over
-  everything, its item under the pointer lit.
+  moved to its window's body and cut to it, with the grip over its
+  bottom right corner. The edges a drag resizes, or that a press where
+  the pointer is would grab, are lit (`World.lit`). The menu draws
+  over everything, its item under the pointer lit.
 - `Host.lean`: the calls into `shim.c` (a canvas and one window),
   `Event.decode` for the events the shim hands back as a `RawEvent` (the
   right button is `Event.menu`; SDL's keycodes and modifier bits become a
@@ -217,7 +229,7 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   not past 100 ms or the next second (a run that ends wakes it), applies
   them, then the outcomes of runs that ended, stops the runs of windows
   that are gone, ticks with the time, and draws. Also `test`,
-  `testLean`, `testEditor`, `testReload`, `testRuns` and `testMasking` for `--test`
+  `testResize`, `testLean`, `testEditor`, `testReload`, `testRuns` and `testMasking` for `--test`
   (`answerNow` steps an app's state and answers what it asks at once),
   and `main`.
 - `shim.c`: Cairo draws into an image in memory, and SDL3 shows it in

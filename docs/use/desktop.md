@@ -6,9 +6,18 @@ and so does a click off it. Drag a window by its title, click one to
 raise it, click the box on a title to close it, Ctrl+Shift+Z to undo, Esc
 to quit. Clock is a clock.
 
+To resize a window, drag one of its edges or corners, or the grip in
+its bottom right corner. An edge lights up when the pointer is close
+enough to grab it, which includes a few pixels outside the window. On
+top, only the title's thin upper rim resizes; the rest of the title
+moves the window. A window can't be made smaller than 200 × 140, and
+an edge stops at the edge of the desktop. One Ctrl+Shift+Z puts back
+the window's old size, and its app's state with it.
+
 Inspector and Notes are placeholders: click in one to drop a dot, or
 type into it to see the text and the last key, with its modifiers, that
-it heard.
+it heard. Each also shows its size and the size it last heard, which
+match as you resize it.
 
 The bar at the bottom counts
 the earlier worlds that undo can return to.
