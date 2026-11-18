@@ -1,7 +1,8 @@
 # How it's built
 
 The Lean code is one module per file in `LeanMachine/`, in the
-`LeanMachine` namespace, with a thin `Main.lean` on top. `Picture`, `Key`,
+`LeanMachine` namespace, with a thin `Main.lean` on top. An app can be
+a folder of modules: Boids' are in `Apps/Boids/`, in `LeanMachine.Boids`. `Picture`, `Key`,
 `App`, `Safepoint`, `Busy`, `Text`, the apps in `Apps/`, `World`,
 `Desktop` and `View` are pure and import only each other. `Ambient` is what code in a
 run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
@@ -125,6 +126,26 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   drops a dot where it lands; it shows what was typed into it, the
   last key it heard, and its size beside the size it heard.
   `inspector` and `notes` are the menu's two.
+- `Apps/Boids/`: Boids, Craig Reynolds' flocking, after the first port
+  to Schevana; so far the simulation, with no app
+  ([Boids](boids/README.md)). The modules import only Init and each
+  other, and each ends with `#guard`s that run as it builds.
+  - `Vec.lean`: a vector in the plane, with `+`, `-`, `* k` and `/ k`
+    through Lean's classes, `dot`, `length2`, `length`, `perp` and
+    `mean`, all `@[inline]`; and `pi`.
+  - `Random.lean`: `uniform lo hi`, a number picked with a `StdGen`,
+    in `StateM`.
+  - `Boid.lean`: `Boid`, a position and a velocity; what it `sees`, its
+    `neighbors`, and each rule's raw push: `cohere`, `align`,
+    `separate`, and Flake's `stepAside` and `backOff` for blockers.
+  - `Rules.lean`: `Rules`, whose fields' defaults are the original
+    settings (`{}`). `Setting` names each one, with its `range`, for
+    random rules (`Rules.random`) and the sliders to come; `Rules.set`
+    keeps the speed limits from crossing.
+  - `Flock.lean`: `Flock`, an array of boids. `Boid.steer` weighs and
+    adds the pushes, and `Flock.step` steers every boid by the same
+    flock. Then the screen's speed limits (`atLeast`, `atMost`) and
+    `wrap`, `stepOn` (a frame), `scatter` and `resize`.
 - `World.lean`: windows, the pointer, the menu and events. Each window
   holds an app. `World.step : World → Event → World` moves, resizes,
   maximizes, restores, minimizes, raises, focuses and closes windows, passes ticks to every app, and passes other
@@ -255,7 +276,7 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   that are gone, ticks with the time, and draws. Also `test`,
   `testResize`, `testMaximize`, `testLean`, `testEditor`, `testReload`, `testRuns` and `testMasking` for `--test`
   (`answerNow` steps an app's state and answers what it asks at once),
-  and `main`.
+  `benchBoids` for `--bench`, and `main`.
 - `shim.c`: Cairo draws into an image in memory, and SDL3 shows it in
   one window and hands back events, text input included, the wheel,
   and a wake (an SDL user event). No GPU in the design.

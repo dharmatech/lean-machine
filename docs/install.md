@@ -53,10 +53,12 @@ the desktop with any arguments that follow.
 ```sh
 .lake/build/bin/desktop --test        # the pure world, driven by a script of events
 .lake/build/bin/desktop --frames 20   # stops after 20 frames
+.lake/build/bin/desktop --bench       # times Boids' step, at 150 to 1000 boids
 SDL_VIDEO_DRIVER=dummy .lake/build/bin/desktop --frames 20   # the same, with no display
 ```
 
 More on `--test`: [What `--test` checks](design/testing.md)
+More on `--bench`: [How fast a step is](design/boids/step-speed.md)
 
 Next: [Use](use/README.md)
 

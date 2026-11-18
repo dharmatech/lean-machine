@@ -20,6 +20,7 @@ dot notation, and no mutation? The name is a working title.
 - [The editor](editor/README.md)
 - [Reloading](reloading/README.md)
 - [Building and linking](building/README.md)
+- [Boids](boids/README.md)
 
 ## Reference
 
