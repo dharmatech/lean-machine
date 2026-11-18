@@ -136,9 +136,12 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   Space change it; the app animates while it runs. The view draws each
   boid as a dot and a line toward its heading, cut to the field, and a
   status line with the count and frames a second. `#guard`s check the
-  keys and the pace as it builds.
+  keys and the pace as it builds, and again as it reloads. It reloads
+  over the compiled simulation, which the REPLs' Lean imports
+  ([A compiled simulation under a reloaded app](reloading/compiled-under-reloaded.md)).
 - `Apps/Boids/`: Boids' simulation. The modules import only Init and
-  each other, and each ends with `#guard`s that run as it builds.
+  each other, and each ends with `#guard`s that run as it builds. The
+  REPLs' Lean imports them, so they can't be reloaded.
   - `Vec.lean`: a vector in the plane, with `+`, `-`, `* k` and `/ k`
     through Lean's classes, `dot`, `length2`, `length`, `perp` and
     `mean`, all `@[inline]`; and `pi`.
@@ -246,7 +249,8 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   apps), and `Event.launch`, and `keepFor`
   stops the runs of windows that are gone.
 - `Eval.lean`: Lean in the desktop. `startBase` imports the REPLs' Lean
-  (`Init`, `LeanMachine.Ambient`, `LeanMachine.Text`: not the apps) on a thread of its
+  (`replImports`: `Init`, `LeanMachine.Ambient`, `LeanMachine.Text` and
+  Boids' simulation, `LeanMachine.Apps.Boids.Flock`; not the apps) on a thread of its
   own as the desktop starts, and opens `LeanMachine`. `eval` takes a
   line, wraps it in `#eval` if it parses as a term, and elaborates it on
   the calling thread with `runCommands`, its own loop over Lean's
@@ -273,7 +277,8 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   this line leaves open (`openAt`), that's coloured as what it is and
   carried to the next line. `projectRoot` is the desktop's own folder,
   noted as this module compiles (`getFileName`: Lake passes Lean full
-  paths). `reload` parses a file's header, checks that everything it
+  paths). `reload` refuses a file whose module (`moduleOf` its path)
+  the REPLs' Lean imported, parses its header, checks that everything it
   imports is in the REPLs' Lean, and elaborates the rest of the file
   there, from a fresh `Command.State` (the root namespace, nothing
   open), with the run's cancel token; with no error, `appsIn` finds the

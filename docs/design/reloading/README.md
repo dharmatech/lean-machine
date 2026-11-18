@@ -3,6 +3,8 @@
 - [Lean can't redefine a declaration](no-redefinition.md)
 - [What a reload costs](reload-cost.md)
 - [Reloaded code is interpreted](interpreted.md)
+- [A compiled simulation under a reloaded app](compiled-under-reloaded.md)
+- [The interpreter remembers what's compiled, by name](native-symbol-cache.md)
 - [No state carries over](no-state-carries-over.md)
 - [An error reloads nothing](error-reloads-nothing.md)
 - [Apps found by their type](apps-found-by-type.md)

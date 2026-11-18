@@ -117,7 +117,9 @@ it again, Down, and drawing an editor full of code.
 Then reloading. It reloads each app's file in the desktop's Lean three
 times and prints how long each took, what Lean said and the apps it
 found; tries files it can't reload (Desktop.lean and Main.lean, which
-import what the desktop's Lean doesn't, and Clock.lean with an error);
+import what the desktop's Lean doesn't, Boids' Flock.lean, which it
+imported, and Clock.lean with an error); evaluates a line that steps
+Boids' demo flock with the compiled simulation;
 and in an editor alone, Ctrl+R on Clock.lean colours `clockFace` as a
 constant, and an unknown name typed on line 14 marks that line. On the
 desktop, with real runs, an editor opens Clock.lean, types `NEW ` in
@@ -128,8 +130,14 @@ it). Editor.lean reloaded from the editor opens a new editor beside it
 (`reload-editor.png`), and reloaded again replaces that one in place.
 Ctrl+C stops a reload. A file with an app the menu doesn't have adds it
 to the menu, and Placeholder.lean's apps replace Inspector and Notes.
-It times a clock's view and an editor's keystroke, Down and view,
-compiled, reloaded, and reloaded without safepoints, and prints RSS
+Then Boids from the menu and an editor on Boids.lean: `NEW ` typed at
+the start of its status line breaks one of the file's checks, so
+nothing is reloaded; typed before the keys instead, the open flock
+restarts with it and frames step it (`reload-boids.png`). Ctrl+R on
+Flock.lean is refused. It times a clock's view and an editor's
+keystroke, Down and view, compiled, reloaded, and reloaded without
+safepoints, and a frame's step and view of Boids, compiled and
+reloaded, at 150 boids and at 1000, and prints RSS
 over 40 reloads of Clock.lean and 10 of Editor.lean, each kept for
 undo.
 

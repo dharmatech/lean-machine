@@ -44,9 +44,12 @@ def projectRoot : System.FilePath := sourceRoot%
 -- code in a run can reach, but not its apps (LeanMachine/Apps/, nor
 -- View and Desktop, which import them). An app's file is reloaded in this
 -- Lean, and its declarations would clash with themselves here if it had
--- them already.
+-- them already. Boids' simulation is here (Flock imports the rest of
+-- it), compiled: a reloaded Boids.lean, which is interpreted, steps its
+-- flock as fast as the menu's Boids does. The simulation's files can't
+-- be reloaded.
 def replImports : Array Name :=
-  #[`Init, `LeanMachine.Ambient, `LeanMachine.Text]
+  #[`Init, `LeanMachine.Ambient, `LeanMachine.Text, `LeanMachine.Apps.Boids.Flock]
 
 /-! ## Safepoints in what the REPL compiles -/
 
@@ -476,6 +479,13 @@ def remarksOf (msgs : Array Message) : IO (List Remark) :=
       | .error => .error text
     return { line := m.pos.line - 1, col := m.pos.column, said }
 
+-- The module a file in the desktop's folder is: `LeanMachine.Apps.Clock`
+-- for `LeanMachine/Apps/Clock.lean`.
+def moduleOf (path : System.FilePath) : Name :=
+  (path.withExtension "").components.foldl .str .anonymous
+
+#guard moduleOf "LeanMachine/Apps/Boids/Flock.lean" == `LeanMachine.Apps.Boids.Flock
+
 -- The constants of type `App` that `env` has beyond what it imported,
 -- by name.
 def appsIn (env : Environment) : List Name :=
@@ -490,15 +500,21 @@ def appsIn (env : Environment) : List Name :=
 -- import only what the desktop's Lean did, and the rest of the file is
 -- elaborated from the root namespace, with nothing open. Each reload
 -- starts again from the desktop's Lean, so the file's declarations never
--- meet an earlier reload's. Stops as `eval` does once `cancel` is set.
+-- meet an earlier reload's. A file the desktop's Lean imported can't be
+-- reloaded: its declarations are there already, compiled. Stops as
+-- `eval` does once `cancel` is set.
 def reload (base : Task (Except IO.Error Held)) (path src : String)
     (cancel : IO.CancelToken) : IO (Outcome × List (Name × App)) := do
   let h ← IO.ofExcept (← IO.wait base)
+  let have_ := h.cmd.env.header.moduleNames
+  let self := moduleOf path
+  if have_.contains self then
+    return (.failed s!"{self} is compiled into the desktop's Lean: rebuild the desktop to \
+      change it", [])
   let ictx := Parser.mkInputContext src path
   let (header, ps, headerSaid) ← Parser.parseHeader ictx
   if headerSaid.hasErrors then
     return (.reloaded (← remarksOf headerSaid.toArray) (Env.of h) [], [])
-  let have_ := h.cmd.env.header.moduleNames
   let missing := (Elab.headerToImports header).filter (!have_.contains ·.module)
   unless missing.isEmpty do
     return (.failed s!"it imports {", ".intercalate (missing.toList.map (toString ·.module))}, \

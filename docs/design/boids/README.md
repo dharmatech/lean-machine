@@ -16,5 +16,6 @@ the flock once a frame while it runs ([Using Boids](../../use/boids.md)).
 - [Random numbers as state](random-as-state.md)
 - [Frames a second, not ms a step](frames-a-second.md)
 - [A number beside a vector needs its type](literal-needs-type.md)
+- [A compiled simulation under a reloaded app](../reloading/compiled-under-reloaded.md)
 
 [↑ Design](../README.md)

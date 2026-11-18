@@ -18,7 +18,12 @@ names are coloured and completed.
 
 Only files that import nothing but
 Init and the desktop's modules other than the apps can be reloaded
-(not Desktop.lean, View.lean or Main.lean).
+(not Desktop.lean, View.lean or Main.lean). Boids.lean can, since its
+simulation is built into the desktop's Lean: a reloaded Boids flies as
+fast as the menu's. The simulation's own files, in Apps/Boids/, can't
+be reloaded, nor can the other modules the desktop's Lean has built in
+(Text.lean, World.lean, …). Ctrl+R on one of them says so; rebuild the
+desktop to change them.
 
 How it works: [Reloading](../design/reloading/README.md)
 

@@ -36,9 +36,12 @@
   through the shim); a minimum size an app asks for, not only the
   desktop's; keys to move and resize the focused window.
 - Reloading: hand an app's state to its new code, as plain data;
-  reload a file that imports another app's file (elaborate both,
-  in order); go to the next marked line; reload on save; keep fewer
-  reloads for undo than other steps.
+  reload an app made of a folder of modules, interpreted (elaborate
+  them in import order; slow for Boids' simulation, which is compiled
+  in instead:
+  [A compiled simulation under a reloaded app](design/reloading/compiled-under-reloaded.md));
+  go to the next marked line; reload on save; keep fewer reloads for
+  undo than other steps.
 - The editor: read only the lines in view, and the rest later; select,
   copy and paste; search; undo a keystroke at a time; open a file from
   the REPL; warn before Esc quits with changes not saved.

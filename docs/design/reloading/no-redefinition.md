@@ -17,5 +17,10 @@ there, from the same starting point: nothing clashes, and memory
 stays put. The price: the REPL can't name `clock` or `repl`, only
 find them in `(← world).catalog`. A file that imports another app's
 file can't be reloaded, nor can Desktop.lean, which imports them all.
+Nor can a file the REPLs' Lean imports: its declarations are there
+already. One app's modules are imported on purpose: Boids'
+simulation, so that Boids.lean, which imports it, can be reloaded and
+still step its flock at compiled speed
+([A compiled simulation under a reloaded app](compiled-under-reloaded.md)).
 
 [↑ Reloading](README.md)

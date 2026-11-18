@@ -7,7 +7,9 @@ three hands with `sin` and `cos`), and is drawn in 0.75 ms instead of
 0.53; an editor's Down, 44 µs instead of 1.7; its view 450 µs instead
 of 105; a keystroke 135 µs instead of 80 (most of it is Lean's
 tokenizer, which is compiled either way). Fine for these apps; a frame
-still fits easily. Without the safepoints it's 3 to 8% faster. Native
+still fits easily. What a reloaded app calls in the modules it imports
+runs compiled: a reloaded Boids steps its flock as fast as the menu's
+([A compiled simulation under a reloaded app](compiled-under-reloaded.md)). Without the safepoints it's 3 to 8% faster. Native
 code would mean a C compiler at run time and `Lean.Dynlib.load`, with
 new symbol names for each reload, since Lean never unloads a library.
 

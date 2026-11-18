@@ -31,4 +31,11 @@ outside it come back in at the opposite edge.
 The rules can't be changed one at a time yet. A window of sliders, as
 Schevana's Boids has, is to come.
 
+Boids.lean can be changed while the flock flies: open it in the editor,
+change it, and press Ctrl+R. Every Boids window starts again with the
+new code ([Reloading an app](reloading.md),
+[Change Boids while it flies](../explore/boids-live.md)). The
+simulation, in Apps/Boids/, is built into the desktop and can't be
+reloaded.
+
 [↑ Use](README.md)

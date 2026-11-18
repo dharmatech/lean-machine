@@ -14,8 +14,8 @@ could be resolved from (the current one and those around it, the
 root, the open ones), what the REPL defined, and keywords from the
 token table (`Trie.findPrefix`). The constants imported are indexed
 by namespace once, as the language server caches its "eligible
-header declarations" in a global: 38,575 names in 2,944 namespaces,
-of 67,237 constants, in 90 ms, in a task of its own after the import,
+header declarations" in a global: 38,763 names in 2,993 namespaces,
+of 67,499 constants, in 90 ms, in a task of its own after the import,
 so the REPLs' Lean is still ready 140 ms after the desktop starts.
 Tab then takes 2 µs for `Busy.al` (one name), 130 µs for `List.ma`
 (236), 0.9 ms for `Nat.` (2,020): quick enough for the REPL's step, on

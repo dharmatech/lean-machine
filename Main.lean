@@ -777,8 +777,9 @@ end LeanMachine
 -- Lean, files that can't be reloaded, an editor alone, then the desktop
 -- with real runs: Clock.lean edited and reloaded into the open clock,
 -- undone, an error, Editor.lean reloaded from an editor, a stop, a new
--- app; then what reloaded code costs to run, and memory over many
--- reloads.
+-- app; Boids.lean edited and reloaded into an open flock, over the
+-- compiled simulation, whose files can't be reloaded; then what reloaded
+-- code costs to run, and memory over many reloads.
 def testReload (c : Canvas) (svc : Services) : IO Unit := do
   let ms (t0 : Nat) : IO Nat := return ((← IO.monoNanosNow) - t0) / 1000000
   let reloadNow (path src : String) : IO (Outcome × List (Lean.Name × App) × Nat) := do
@@ -787,7 +788,7 @@ def testReload (c : Canvas) (svc : Services) : IO Unit := do
     return (o, apps, ← ms t0)
   IO.println "each app's file, reloaded in the desktop's Lean three times:"
   let mut made : List (Lean.Name × App) := []
-  for file in ["Clock", "Placeholder", "Repl", "Editor"] do
+  for file in ["Clock", "Placeholder", "Repl", "Editor", "Boids"] do
     let path := s!"LeanMachine/Apps/{file}.lean"
     let src ← IO.FS.readFile (projectRoot / path)
     let mut times := #[]
@@ -800,9 +801,12 @@ def testReload (c : Canvas) (svc : Services) : IO Unit := do
     IO.println s!"  {file}.lean: {times} ms; {said}"
   let madeApp (n : Lean.Name) : App := ((made.find? (·.1 == n)).map (·.2)).getD default
   IO.println "files it can't reload:"
-  for path in ["LeanMachine/Desktop.lean", "Main.lean"] do
+  for path in ["LeanMachine/Desktop.lean", "Main.lean", "LeanMachine/Apps/Boids/Flock.lean"] do
     let (o, _, _) ← reloadNow path (← IO.FS.readFile (projectRoot / path))
     IO.println s!"  {path}: {o.show}"
+  -- Boids' simulation is there, compiled, for the REPL too.
+  let flockLine := "(Boids.Flock.demo.stepOn {} 100 100).map (·.position.x)"
+  IO.println s!"  in the REPL, {flockLine}: {(← svc.eval flockLine none (← IO.CancelToken.new)).show}"
   let clockSrc ← IO.FS.readFile (projectRoot / "LeanMachine/Apps/Clock.lean")
   let (o, apps, _) ← reloadNow "Clock.lean" (clockSrc.replace "t.digits]" "t.digit]")
   IO.println s!"  Clock.lean with `t.digit`: {o.show}; {apps.length} apps"
@@ -907,6 +911,43 @@ def testReload (c : Canvas) (svc : Services) : IO Unit := do
   let placeholders := made.filter fun (n, _) => n == ``inspector || n == ``notes
   let d := d.step (.reload edWin placeholders)
   IO.println s!"  Placeholder.lean's apps: windows {windows d}, {d.past.length} earlier worlds"
+  -- Boids from the menu, and an editor on Boids.lean. `NEW ` typed at
+  -- the start of its status line breaks a check of the file's, so
+  -- nothing is reloaded; typed before the keys instead, and reloaded, it
+  -- restarts the open flock with the new code, which frames step.
+  let boidsSays (d : Desktop) : String :=
+    let line := (((d.now.windows.find? (·.title == "Boids")).map (·.texts)).getD []).find?
+      (·.contains " boids · ")
+    (line.map fun s => " · ".intercalate ((s.splitOn " · ").take 3)).getD "?"
+  let (bd, bruns) ← feed start {} [.tick ⟨10, 8, 30⟩, .menu 20 20, item 20 20 5,
+    .menu 500 240, item 500 240 2]
+  let (bd, bruns, _) ← settle bd bruns
+  let (bd, bruns) ← feed bd bruns [.text "apps/boids.lean", dkey .enter]
+  let (bd, bruns, _) ← settle bd bruns
+  let bedWin := bd.now.focus
+  let boidsSrc ← IO.FS.readFile (projectRoot / "LeanMachine/Apps/Boids.lean")
+  let lines := boidsSrc.splitOn "\n"
+  let statusLine := (lines.findIdx? (·.startsWith "  s!\"{s.flock.size} boids")).getD 0
+  let keysAt := ((lines.getD statusLine "").splitOn "r random").head!.length
+  let (bd, bruns) ← feed bd bruns ([.key .home { ctrl := true }] ++
+    List.replicate statusLine (dkey .down) ++ List.replicate 5 (dkey .right) ++ [.text "NEW "])
+  IO.println s!"Boids and an editor on it: windows {windows bd}; Boids says {boidsSays bd}"
+  IO.println s!"  `NEW ` typed at the start of Boids' status line (line {statusLine + 1}), Ctrl+R:"
+  let (bd, bruns) ← reloadOn bd bruns
+  IO.println s!"    Boids says {boidsSays bd}; the editor: {(status bd bedWin).quote}"
+  let (bd, bruns) ← feed bd bruns (List.replicate 4 (dkey .backspace) ++
+    List.replicate (keysAt - 5) (dkey .right) ++ [.text "NEW "])
+  IO.println s!"  moved to just before its keys, Ctrl+R:"
+  let (bd, bruns) ← reloadOn bd bruns
+  let bd' := [Event.frame 5000, .frame 5016, .frame 5032].foldl Desktop.step bd
+  IO.println s!"    windows {windows bd}; Boids says {boidsSays bd}, after 3 frames \
+    {boidsSays bd'}; the editor: {(status bd bedWin).quote}"
+  render c bd'.view; shot c "reload-boids.png"
+  let (bd, bruns) ← feed bd bruns [ctrlE 'o', ctrlE 'o', .text "boids/flock", dkey .enter]
+  let (bd, bruns, _) ← settle bd bruns
+  IO.println s!"  Flock.lean, Ctrl+R:"
+  let (bd, _) ← reloadOn bd bruns
+  IO.println s!"    the editor: {(status bd bedWin).quote}"
   -- What reloaded code costs: it runs in Lean's interpreter, and starts
   -- every function at a safepoint, which nothing can stop on the loop's
   -- thread yet.
@@ -941,6 +982,21 @@ def testReload (c : Canvas) (svc : Services) : IO Unit := do
       if (a.view (editorSize.1 + (i % 2).toFloat) editorSize.2).monos == 0 then IO.println "?"
     IO.println s!"  a {name} editor on {a.title}, line 121: a keystroke {keyUs} µs, Down {downUs} µs, \
       the view {viewUs} µs"
+  -- Boids' step calls the compiled simulation either way; its view is
+  -- the app's own code.
+  let heard (a : App) (e : AppEvent) : App := ((a.step e).map (·.1)).getD a
+  for (name, a) in [("compiled", boids), ("reloaded", madeApp ``boids)] do
+    let mut a := (List.range 5).foldl (fun a i => heard a (.frame (1000 + 16 * i))) a
+    let mut said := []
+    for n in [150, 1000] do
+      if n == 1000 then a := (List.replicate 17 (key .up)).foldl heard a
+      let at_ := a
+      let stepUs ← usPer 20 fun i => do
+        if !(heard at_ (.frame (2000 + 16 * i))).animating then IO.println "?"
+      let viewUs ← usPer 20 fun i => do
+        if (at_.view (760 + (i % 2).toFloat) 544).texts.isEmpty then IO.println "?"
+      said := said ++ [s!"at {n} boids a frame's step {stepUs} µs, the view {viewUs} µs"]
+    IO.println s!"  a {name} Boids: {", ".intercalate said}"
   -- Memory over many reloads: each one is a step undo can return to, and
   -- the apps in the worlds it keeps hold the Lean they came from.
   let (d, runs) ← feed d runs [.press 507 300, ctrlE 'o', .text "apps/cl", dkey .enter]
