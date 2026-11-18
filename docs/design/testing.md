@@ -48,6 +48,16 @@ shorter by its bottom edge (`resize-editor.png`), and the cursor's line
 is still in view. Undo puts the size back. Last, Clock is made wider by
 its left edge and reloaded from the editor, and it keeps that size.
 
+Then maximizing. Notes is maximized by the box on its title and
+restored by it; Clock by a double click on its title, which one undo
+takes back, and restored by another; the REPL by Ctrl+Shift+M, undone.
+Inspector, maximized, is pressed in the middle of its title and nudged
+2 pixels, and stays maximized; dragged 100 down, it's back at its old
+size under the pointer. Maximized again and dragged by its right edge,
+it's a normal window 300 narrower. A reload keeps a maximized clock
+maximized, and its box puts it back where it was. An editor on
+Clock.lean, maximized, shows 36 lines (`maximize.png`).
+
 Between the REPL's highlighting and its runs, `--test` tries the
 editor. It prints the tokens of six lines of a file that leave a
 comment, a nested comment, a string and a doc comment open for the next

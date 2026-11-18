@@ -26,6 +26,10 @@ def minH : Float := 140
 def reach : Float := 4
 -- How near a corner a grab on one edge takes the other edge too.
 def corner : Float := 16
+-- How far the pointer goes after a press on a title or an edge before
+-- the window follows: a click, or the two of a double click, shouldn't
+-- move it.
+def dragSlop : Float := 4
 
 -- A window's place on the screen: its corner, and its size with the
 -- title and frame.
@@ -67,9 +71,14 @@ def Rect.drag (r : Rect) (es : Edges) (dx dy : Float) : Rect :=
     else bottom
   ⟨left, top, right - left, bottom - top⟩
 
+-- Where a maximized window goes: all of the screen above the bar.
+def desktopRect : Rect := ⟨0, 0, screenW, screenH - barH⟩
+
 inductive Event where
   | quit
-  | press (x y : Float)       -- the left button
+  -- The left button; `clicks` is how many in a row it makes: 2 for the
+  -- second press of a double click.
+  | press (x y : Float) (clicks : Nat := 1)
   | release (x y : Float)
   | motion (x y : Float)
   | menu (x y : Float)        -- the right button: asks for the menu
@@ -94,6 +103,8 @@ structure Win where
   -- (`LeanMachine.clock`); a reload of it replaces the app. `none`: made
   -- in a REPL.
   origin : Option Lean.Name := none
+  -- Where it goes back to when it's restored: `some` while it's maximized.
+  restore : Option Rect := none
   deriving Inhabited
 
 def Win.title (w : Win) : String := w.app.title
@@ -110,6 +121,15 @@ def Win.bodyW (w : Win) : Float := w.w - 2 * frame
 def Win.bodyH (w : Win) : Float := w.h - titleH - frame
 
 def Win.rect (w : Win) : Rect := ⟨w.x, w.y, w.w, w.h⟩
+def Win.maximized (w : Win) : Bool := w.restore.isSome
+
+-- Where a drag of the title from `x` starts: where the window is, or for
+-- a maximized one, its restored size under the pointer, as far along its
+-- title as the pointer is along this one.
+def Win.dragFrom (w : Win) (x : Float) : Rect :=
+  match w.restore with
+  | some r => { r with x := x - (x - w.x) / w.w * r.w, y := w.y }
+  | none => w.rect
 
 -- A window being dragged: the edges that move, and where the window and
 -- the pointer were at the press.
@@ -119,6 +139,7 @@ structure Drag where
   start : Rect
   px : Float
   py : Float
+  moved : Bool := false   -- past `dragSlop` yet
 
 -- The menu that opens apps: where its corner is. Its items are the
 -- world's catalog, one per app.
@@ -165,6 +186,10 @@ def Win.onTitle (w : Win) (x y : Float) : Bool :=
 def Win.onClose (w : Win) (x y : Float) : Bool :=
   w.onTitle x y && x ≥ w.x + w.w - 26
 
+-- The box left of the close box, which maximizes the window or restores it.
+def Win.onMax (w : Win) (x y : Float) : Bool :=
+  w.onTitle x y && x ≥ w.x + w.w - 46 && x < w.x + w.w - 26
+
 def Win.inBody (w : Win) (x y : Float) : Bool :=
   w.bodyX ≤ x && x < w.bodyX + w.bodyW && w.bodyY ≤ y && y < w.bodyY + w.bodyH
 
@@ -189,7 +214,7 @@ def Win.edgesAt (w : Win) (x y : Float) : Edges :=
 
 -- `e` as the window's app hears it, moved into the app's coordinates.
 def Win.toApp (w : Win) : Event → Option AppEvent
-  | .press x y => some (.press (x - w.bodyX) (y - w.bodyY))
+  | .press x y _ => some (.press (x - w.bodyX) (y - w.bodyY))
   | .release x y => some (.release (x - w.bodyX) (y - w.bodyY))
   | .motion x y => some (.motion (x - w.bodyX) (y - w.bodyY))
   | .key k m => some (.key k m)
@@ -249,6 +274,14 @@ def World.tell (world : World) (pick : Win → Bool) (e : Event) : World :=
 def World.place (world : World) (id : Nat) (r : Rect) : World :=
   world.each (·.id == id) (·.place r)
 
+-- Window `id` maximized, to fill the desktop, or if it is, restored to
+-- where it was; its app hears its new size.
+def World.toggleMax (world : World) (id : Nat) : World :=
+  world.each (·.id == id) fun w =>
+    match w.restore with
+    | some r => { w with restore := none }.place r
+    | none => { w with restore := some w.rect }.place desktopRect
+
 def World.toFocus (world : World) (e : Event) : World :=
   world.tell (·.id == world.focus) e
 
@@ -294,8 +327,8 @@ def World.reload (world : World) (win : Nat) (name : Lean.Name) (app : App) : Wo
   if world.windows.any fun w => w.origin == some name && w.id != win then
     world.windows.foldl (init := { world with windows := [] }) fun world w =>
       if w.origin == some name && w.id != win then
-        let (w, world) := world.fresh w.id app w.x w.y (some name) (some (w.bodyW, w.bodyH))
-        { world with windows := world.windows ++ [w] }
+        let (nw, world) := world.fresh w.id app w.x w.y (some name) (some (w.bodyW, w.bodyH))
+        { world with windows := world.windows ++ [{ nw with restore := w.restore }] }
       else { world with windows := world.windows ++ [w] }
   else match world.windows.find? (·.id == win) with
     | some w => world.launch app (w.x + w.w + 12) w.y (some name)
@@ -308,7 +341,7 @@ def World.openMenu (world : World) (x y : Float) : World :=
 
 -- What an event does to the windows, with no menu in the way.
 def World.stepWindows (world : World) : Event → World
-  | .press x y =>
+  | .press x y clicks =>
     match world.grabAt x y with
     | none => { world with focus := 0 }
     | some (w, es) =>
@@ -317,22 +350,34 @@ def World.stepWindows (world : World) : Event → World
                      focus := 0 }
       else
         let world := { world with windows := world.raise w, focus := w.id }
-        let grab (es : Edges) : World := { world with drag := some ⟨w.id, es, w.rect, x, y⟩ }
-        if es.any then grab es                 -- an edge or a corner: resizes it
-        else if w.onTitle x y then grab .all   -- the title: moves it
-        else if w.inBody x y then world.toFocus (.press x y)
+        let grab (es : Edges) (start : Rect) : World :=
+          { world with drag := some { id := w.id, edges := es, start, px := x, py := y } }
+        if es.any then grab es w.rect          -- an edge or a corner: resizes it
+        else if w.onMax x y then world.toggleMax w.id
+        else if w.onTitle x y then
+          if clicks % 2 == 0 then world.toggleMax w.id   -- a double click
+          else grab .all (w.dragFrom x)                  -- moves it
+        else if w.inBody x y then world.toFocus (.press x y clicks)
         else world
+  -- A drag that has gone past `dragSlop` moves the window's edges with
+  -- the pointer; a maximized window is maximized no more.
   | .motion x y =>
     let world := { world with mouseX := x, mouseY := y }
     match world.drag with
     | none => world.toFocus (.motion x y)
-    | some d => world.place d.id (d.start.drag d.edges (x - d.px) (y - d.py))
+    | some d =>
+      if !d.moved && (x - d.px).abs < dragSlop && (y - d.py).abs < dragSlop then world
+      else
+        let world := { world with drag := some { d with moved := true } }
+        world.each (·.id == d.id) fun w =>
+          { w with restore := none }.place (d.start.drag d.edges (x - d.px) (y - d.py))
   | .release x y =>
     if world.drag.isSome then { world with drag := none }
     else world.toFocus (.release x y)
   | .menu x y => world.openMenu x y
   | .key k m =>
     if desktopKey 'n' k m then world.openMenu world.mouseX world.mouseY
+    else if desktopKey 'm' k m then world.toggleMax world.focus
     else world.toFocus (.key k m)
   | .text s => world.toFocus (.text s)
   -- The wheel goes to the window under the pointer, focused or not.
@@ -354,7 +399,7 @@ def World.stepWindows (world : World) : Event → World
 -- keys and text still go to the focused app.
 def World.step (world : World) (e : Event) : World :=
   match world.menu, e with
-  | some m, .press x y =>
+  | some m, .press x y _ =>
     let world := { world with menu := none }
     match (world.itemAt? m x y).bind fun i => world.catalog[i]? with
     | some (name, app) => world.launch app m.x m.y (some name)
@@ -369,13 +414,14 @@ def World.takeAsked (world : World) : World × List Asked :=
 
 -- Whether `e` starts a step undo can return to. A press does, unless it
 -- only closes the menu, and so does a reload, so undo brings the old apps
--- back; nothing else does.
+-- back, and Ctrl+Shift+M with a window focused; nothing else does.
 def World.commits (world : World) : Event → Bool
-  | .press x y =>
+  | .press x y _ =>
     match world.menu with
     | some m => (world.itemAt? m x y).isSome
     | none => true
   | .reload .. => true
+  | .key k m => desktopKey 'm' k m && world.focus != 0
   | _ => false
 
 end LeanMachine

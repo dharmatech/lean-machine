@@ -26,9 +26,10 @@
   worth returning to (Enter in a REPL, say).
 - Right-click for apps too, perhaps a window menu, now that the right
   button always opens the desktop's menu.
-- Windows: maximize and restore (a window would keep the `Rect` to go
-  back to), minimize to the bar, tile and cascade. Each computes
-  rectangles and calls `World.place`.
+- Windows: minimize to the bar, which would show a button for each
+  window, as Schevana's taskbar does; tile and cascade. Each computes
+  rectangles and calls `World.place`; minimized windows come back
+  maximized if they were.
 - Resizing: the pointer's shape over an edge (SDL's system cursors,
   through the shim); a minimum size an app asks for, not only the
   desktop's; keys to move and resize the focused window.

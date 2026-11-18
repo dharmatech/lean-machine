@@ -127,7 +127,7 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   `inspector` and `notes` are the menu's two.
 - `World.lean`: windows, the pointer, the menu and events. Each window
   holds an app. `World.step : World → Event → World` moves, resizes,
-  raises, focuses and closes windows, passes ticks to every app, and passes other
+  maximizes, restores, raises, focuses and closes windows, passes ticks to every app, and passes other
   events, keys and text included, to the focused window's app, moved
   into the app's coordinates; a run's outcome (`Event.done`) goes to the
   window that asked for it, and an app a run launched (`Event.launch`)
@@ -140,8 +140,14 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   its frame, near a corner, on the grip) starts a `Drag` of some
   `Edges`, all four for a title; each motion places the window at
   `Rect.drag` of where it started, no smaller than `minW` by `minH`
-  when resizing. `World.place` is the one way a window changes place:
-  its app hears `resize` when its body's size changes.
+  when resizing, and only once the pointer has gone `dragSlop`.
+  `World.place` is the one way a window changes place: its app hears
+  `resize` when its body's size changes. A maximized window keeps where
+  it was (`Win.restore`); `World.toggleMax` maximizes it to
+  `desktopRect` or restores it, from the green box on its title
+  (`Win.onMax`), a double click on the title (`Event.press`'s `clicks`)
+  or Ctrl+Shift+M, and a drag makes it a normal window again, a title
+  drag at its old size under the pointer (`Win.dragFrom`).
   The world holds a `catalog` of apps, the menu's items, each by the
   name of its declaration (`LeanMachine.clock`), and each window
   remembers the declaration its app came from (`Win.origin`; none for
@@ -153,7 +159,7 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   (`World.fresh`), at the window's place and size. With no such window, it
   opens one beside the window that asked. `World.commits` says which
   events start a step undo can return to: a press that does something,
-  and a reload.
+  a reload, and Ctrl+Shift+M.
 - `Desktop.lean`: `Desktop` is the world now and every world before it;
   undo (Ctrl+Shift+Z) takes the previous one, apps' states included.
   The worlds kept for undo have empty outboxes, so undo never asks again.
@@ -168,7 +174,8 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   the pointer is would grab, are lit (`World.lit`). The menu draws
   over everything, its item under the pointer lit.
 - `Host.lean`: the calls into `shim.c` (a canvas and one window),
-  `Event.decode` for the events the shim hands back as a `RawEvent` (the
+  `Event.decode` for the events the shim hands back as a `RawEvent` (a
+  press brings SDL's count of clicks in a row; the
   right button is `Event.menu`; SDL's keycodes and modifier bits become a
   `Key` and `Mods`; the wheel brings the pointer's place and how far it
   turned), `Host.wake`, which any thread may call to end the
@@ -229,7 +236,7 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   not past 100 ms or the next second (a run that ends wakes it), applies
   them, then the outcomes of runs that ended, stops the runs of windows
   that are gone, ticks with the time, and draws. Also `test`,
-  `testResize`, `testLean`, `testEditor`, `testReload`, `testRuns` and `testMasking` for `--test`
+  `testResize`, `testMaximize`, `testLean`, `testEditor`, `testReload`, `testRuns` and `testMasking` for `--test`
   (`answerNow` steps an app's state and answers what it asks at once),
   and `main`.
 - `shim.c`: Cairo draws into an image in memory, and SDL3 shows it in

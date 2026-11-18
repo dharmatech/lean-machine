@@ -46,7 +46,7 @@ instance : Nonempty Canvas := CanvasPointed.property
 -- when it ends. Does nothing before `Host.open`.
 @[extern "sv_host_wake"] opaque Host.wake : IO Unit
 -- An event as `sv_host_event` in shim.c hands it back: numbers
--- [kind, a, b, c], and the text of a text event (empty for the others).
+-- [kind, a, b, c, d], and the text of a text event (empty for the others).
 -- Text can't travel in a `FloatArray`, and two fields keep one call per
 -- event.
 structure RawEvent where
@@ -81,8 +81,9 @@ def Mods.ofSDL (bits : UInt32) : Mods :=
   { shift := bits &&& 0x3 != 0, ctrl := bits &&& 0xC0 != 0,
     alt := bits &&& 0x300 != 0 }
 
--- For a button, c is SDL's number for it: 1 left, 3 right; for the wheel,
--- how far it turned. A key brings
+-- For a button, c is SDL's number for it: 1 left, 3 right, and for a
+-- press d is how many clicks in a row it makes; for the wheel, c is how
+-- far it turned. A key brings
 -- its code and modifiers in a and b; text, the modifiers held as it was
 -- typed. Text typed with Ctrl held is a command, not text: the key event
 -- that came with it carries it.
@@ -91,9 +92,10 @@ def Event.decode (r : RawEvent) : Option Event :=
   let x := a.get! 1
   let y := a.get! 2
   let button := a.get! 3
+  let clicks := if a.size > 4 then (a.get! 4).toUInt32.toNat else 1
   match (a.get! 0).toUInt32 with
   | 1 => some .quit
-  | 2 => if button == 1 then some (.press x y)
+  | 2 => if button == 1 then some (.press x y (max 1 clicks))
          else if button == 3 then some (.menu x y)
          else none
   | 3 => if button == 1 then some (.release x y) else none

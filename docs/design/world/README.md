@@ -7,6 +7,8 @@
 - [Opening an app is placing a value](opening-an-app.md)
 - [An app hears its size](app-size.md)
 - [A drag moves edges](resizing.md)
+- [A maximized window remembers where it was](maximizing.md)
+- [A default argument is a value in a pattern](default-in-a-pattern.md)
 - [A title from the state](title-from-state.md)
 - [A pattern variable can be a constructor](pattern-variable-constructor.md)
 

@@ -11,8 +11,11 @@ namespace LeanMachine
 def litRgb : UInt32 := 0x7dcfff   -- an edge the pointer would grab, or is dragging
 
 -- A window, its edges `lit` lit. The grip in the body's bottom right
--- corner, drawn over the app, says that the window can be resized.
+-- corner, drawn over the app, says that the window can be resized. On the
+-- title, the close box, and left of it the box that maximizes the window,
+-- with a hole in it while the window is maximized, to restore it.
 def Win.view (w : Win) (focused : Bool) (lit : Edges := {}) : Picture :=
+  let titleRgb : UInt32 := if focused then 0xbb9af7 else 0x565f89
   let right := w.x + w.w
   let bottom := w.y + w.h
   -- The lit edges, short of the rounded corners.
@@ -26,11 +29,12 @@ def Win.view (w : Win) (focused : Bool) (lit : Edges := {}) : Picture :=
   let gy := w.bodyY + w.bodyH
   let grip := [4, 8, 12].map fun (k : Float) => Picture.line (gx - k) (gy - 2) (gx - 2) (gy - k) 1.5 gripRgb
   .group ([
-    .rect w.x w.y w.w w.h 8 (if focused then 0xbb9af7 else 0x565f89),
+    .rect w.x w.y w.w w.h 8 titleRgb,
     .rect w.bodyX w.bodyY w.bodyW w.bodyH 6 0x1a1b26,
     .text (w.x + 12) (w.y + 19) 14 0x1a1b26 w.title,
-    .rect (w.x + w.w - 22) (w.y + 7) 14 14 3
-      (if focused then 0xf7768e else 0x414868),
+    .rect (right - 22) (w.y + 7) 14 14 3 (if focused then 0xf7768e else 0x414868),
+    .rect (right - 42) (w.y + 7) 14 14 3 (if focused then 0x9ece6a else 0x414868),
+    if w.maximized then .rect (right - 38) (w.y + 11) 6 6 1 titleRgb else .group [],
     -- The app draws in its own coordinates, cut to the body.
     .translate w.bodyX w.bodyY
       (.clip 0 0 w.bodyW w.bodyH (w.app.view w.bodyW w.bodyH))] ++
@@ -73,7 +77,7 @@ def Desktop.view (d : Desktop) : Picture :=
      .text 14 (screenH - 10) 13 0x7aa2f7
        s!"{d.past.length} earlier worlds   ·   \
           right-click or Ctrl+Shift+N: open an app   ·   drag a title or an edge   ·   \
-          click in a window, then type   ·   click the box to close   ·   \
+          click in a window, then type   ·   boxes on a title: maximize, close   ·   \
           Ctrl+Shift+Z undo   ·   Esc quits"] ++
     world.menu.toList.map world.menuView)
 

@@ -275,17 +275,22 @@ LEAN_EXPORT lean_obj_res sv_host_present(b_lean_obj_arg c, lean_obj_arg io) {
   return unit();
 }
 
-// A `RawEvent` (Host.lean): [kind, a, b, c] and a string. Lean lays out a
-// structure of two boxed fields as a constructor with two fields.
-static lean_obj_res raw_event(double kind, double a, double b, double c,
-                              const char *text) {
-  lean_object *arr = lean_alloc_sarray(sizeof(double), 4, 4);
+// A `RawEvent` (Host.lean): [kind, a, b, c, d] and a string. Lean lays out
+// a structure of two boxed fields as a constructor with two fields.
+static lean_obj_res raw_event5(double kind, double a, double b, double c, double d,
+                               const char *text) {
+  lean_object *arr = lean_alloc_sarray(sizeof(double), 5, 5);
   double *p = lean_float_array_cptr(arr);
-  p[0] = kind; p[1] = a; p[2] = b; p[3] = c;
+  p[0] = kind; p[1] = a; p[2] = b; p[3] = c; p[4] = d;
   lean_object *ev = lean_alloc_ctor(0, 2, 0);
   lean_ctor_set(ev, 0, arr);
   lean_ctor_set(ev, 1, lean_mk_string(text));
   return lean_io_result_mk_ok(ev);
+}
+
+static lean_obj_res raw_event(double kind, double a, double b, double c,
+                              const char *text) {
+  return raw_event5(kind, a, b, c, 0, text);
 }
 
 static float f32_at(const uint8_t *e, int i) { float f; memcpy(&f, e + i, 4); return f; }
@@ -293,7 +298,9 @@ static uint32_t u32_at(const uint8_t *e, int i) { uint32_t u; memcpy(&u, e + i, 
 static uint16_t u16_at(const uint8_t *e, int i) { uint16_t u; memcpy(&u, e + i, 2); return u; }
 
 // The next event; kind 0 is "none before the timeout", kind 7 a wake from
-// `sv_host_wake`. A timeout of 0 only polls. A key brings SDL's keycode
+// `sv_host_wake`. A timeout of 0 only polls. A press brings the button
+// (at 24) and how many clicks in a row it makes (at 26: 2 for a double
+// click). A key brings SDL's keycode
 // and modifiers; text brings the modifiers held as it was typed, and the
 // text, which SDL frees at the next poll, so it is copied into a Lean
 // string here.
@@ -306,7 +313,7 @@ LEAN_EXPORT lean_obj_res sv_host_event(uint32_t timeout, lean_obj_arg io) {
     if (!got) return raw_event(0, 0, 0, 0, "");
     switch (u32_at(e, 0)) {
       case 0x100: return raw_event(1, 0, 0, 0, "");                         // quit
-      case 0x401: return raw_event(2, f32_at(e, 28), f32_at(e, 32), e[24], ""); // press
+      case 0x401: return raw_event5(2, f32_at(e, 28), f32_at(e, 32), e[24], e[26], ""); // press
       case 0x402: return raw_event(3, f32_at(e, 28), f32_at(e, 32), e[24], ""); // release
       case 0x400: return raw_event(4, f32_at(e, 28), f32_at(e, 32), 0, "");  // motion
       case 0x300: return raw_event(5, u32_at(e, 28), u16_at(e, 32), 0, ""); // key

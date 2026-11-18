@@ -14,6 +14,14 @@ moves the window. A window can't be made smaller than 200 × 140, and
 an edge stops at the edge of the desktop. One Ctrl+Shift+Z puts back
 the window's old size, and its app's state with it.
 
+To maximize a window, click the green box on its title, double-click
+the title, or press Ctrl+Shift+M with the window focused. It then fills
+the desktop above the bar, and its green box has a hole in it. Any of
+the three restores it to where it was, and so does dragging it. Dragged
+by its title, it takes its old size under the pointer; dragged by an
+edge, it resizes from where it is. One Ctrl+Shift+Z undoes a maximize or
+a restore.
+
 Inspector and Notes are placeholders: click in one to drop a dot, or
 type into it to see the text and the last key, with its modifiers, that
 it heard. Each also shows its size and the size it last heard, which
