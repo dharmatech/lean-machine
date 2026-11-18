@@ -26,10 +26,12 @@
   worth returning to (Enter in a REPL, say).
 - Right-click for apps too, perhaps a window menu, now that the right
   button always opens the desktop's menu.
-- Windows: minimize to the bar, which would show a button for each
-  window, as Schevana's taskbar does; tile and cascade. Each computes
-  rectangles and calls `World.place`; minimized windows come back
-  maximized if they were.
+- Windows: tile and cascade, as Schevana's desktop/arrange.ss does.
+  Each computes rectangles for the windows that aren't minimized
+  (`World.visible`) and calls `World.place`. Then keys to go from window
+  to window (`World.focusOn`), a window menu on a taskbar button's right
+  click, and closing a window giving the focus to the frontmost one left,
+  as minimizing does.
 - Resizing: the pointer's shape over an edge (SDL's system cursors,
   through the shim); a minimum size an app asks for, not only the
   desktop's; keys to move and resize the focused window.
@@ -40,7 +42,9 @@
 - The editor: read only the lines in view, and the rest later; select,
   copy and paste; search; undo a keystroke at a time; open a file from
   the REPL; warn before Esc quits with changes not saved.
-- Measure proportional text in the view, for layout that wraps (Notes).
+- Measure proportional text in the view, for layout that wraps (Notes)
+  and for the taskbar, which guesses
+  ([The taskbar guesses how wide text is](design/drawing/guessing-text-widths.md)).
   Monospace text can be measured already.
 - Display scaling and a resizable window.
 

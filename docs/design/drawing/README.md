@@ -5,6 +5,7 @@
 - [Keys and text are separate events](keys-and-text.md)
 - [Ctrl+Shift+U belongs to IBus](ctrl-shift-u.md)
 - [Monospace on Lean's grid](monospace-grid.md)
+- [The taskbar guesses how wide text is](guessing-text-widths.md)
 - [Colours on the grid](colours-on-the-grid.md)
 - [The wheel](wheel.md)
 

@@ -28,7 +28,7 @@ def Desktop.undo (d : Desktop) : Desktop :=
 
 -- Ctrl+Shift+Z undoes. Whether anything else starts a step undo can
 -- return to is the world's to say (`World.commits`): a press that does
--- something, a reload, Ctrl+Shift+M.
+-- something, a reload, Ctrl+Shift+M and Ctrl+Shift+H.
 def Desktop.step (d : Desktop) (e : Event) : Desktop :=
   let undo := match e with
     | .key k m => desktopKey 'z' k m

@@ -3,8 +3,9 @@ import LeanMachine.App
 /-! # The world: windows, the pointer, the menu, and what an event does
 
 Pure: `World.step` makes a new world and changes nothing. Each window
-holds an app. The world moves, resizes, raises and closes windows, opens
-apps from its menu, tells apps their size, passes ticks to every app,
+holds an app. The world moves, resizes, raises, minimizes and closes
+windows, lays out the taskbar along the bottom, opens apps from its
+menu, tells apps their size, passes ticks to every app,
 and passes other events, keys and text included, to the focused
 window's app. What apps ask for waits in the world's outbox, marked with
 the window that asked, until the loop takes it; the outcome of a run
@@ -14,7 +15,7 @@ namespace LeanMachine
 
 def screenW : Float := 1280
 def screenH : Float := 800
-def barH : Float := 30        -- the bar along the bottom
+def barH : Float := 30        -- the taskbar, along the bottom
 def titleH : Float := 28
 def frame : Float := 3        -- a window's edge, beside and below its body
 -- A window can't be made smaller than this by hand: its title keeps room
@@ -30,6 +31,9 @@ def corner : Float := 16
 -- the window follows: a click, or the two of a double click, shouldn't
 -- move it.
 def dragSlop : Float := 4
+-- How much of its title a moved window keeps above the bar, which is in
+-- front of it, so that a press can still find the title.
+def titleKept : Float := 20
 
 -- A window's place on the screen: its corner, and its size with the
 -- title and frame.
@@ -56,11 +60,14 @@ def Edges.any (e : Edges) : Bool := e.left || e.top || e.right || e.bottom
 -- cross).
 def between (lo hi v : Float) : Float := max lo (min hi v)
 
--- `r` with the edges `es` moved by (dx, dy). All four move it. Fewer
--- resize it, no smaller than `minW` by `minH`, and an edge moved stops at
--- the edge of the desktop (or where it was, if it was past it).
+-- `r` with the edges `es` moved by (dx, dy). All four move it, anywhere
+-- but down past `titleKept` above the bar. Fewer resize it, no smaller
+-- than `minW` by `minH`, and an edge moved stops at the edge of the
+-- desktop (or where it was, if it was past it).
 def Rect.drag (r : Rect) (es : Edges) (dx dy : Float) : Rect :=
-  if es == .all then { r with x := r.x + dx, y := r.y + dy } else
+  if es == .all then
+    { r with x := r.x + dx, y := min (r.y + dy) (max r.y (screenH - barH - titleKept)) }
+  else
   let right := r.x + r.w
   let bottom := r.y + r.h
   let left := if es.left then between (min 0 r.x) (right - minW) (r.x + dx) else r.x
@@ -73,6 +80,11 @@ def Rect.drag (r : Rect) (es : Edges) (dx dy : Float) : Rect :=
 
 -- Where a maximized window goes: all of the screen above the bar.
 def desktopRect : Rect := ⟨0, 0, screenW, screenH - barH⟩
+
+-- The bar is in front of every window: a window moved partly under it
+-- is hidden there, and takes no presses there.
+def barY : Float := screenH - barH
+def inBar (y : Float) : Bool := y ≥ barY
 
 inductive Event where
   | quit
@@ -105,6 +117,10 @@ structure Win where
   origin : Option Lean.Name := none
   -- Where it goes back to when it's restored: `some` while it's maximized.
   restore : Option Rect := none
+  -- Only on the taskbar: not drawn, and no press finds it. Its place and
+  -- `restore` stay as they were, so it comes back as it was. Its app
+  -- still hears ticks and how its runs ended.
+  minimized : Bool := false
   deriving Inhabited
 
 def Win.title (w : Win) : String := w.app.title
@@ -190,6 +206,10 @@ def Win.onClose (w : Win) (x y : Float) : Bool :=
 def Win.onMax (w : Win) (x y : Float) : Bool :=
   w.onTitle x y && x ≥ w.x + w.w - 46 && x < w.x + w.w - 26
 
+-- The box left of that, which minimizes the window.
+def Win.onMin (w : Win) (x y : Float) : Bool :=
+  w.onTitle x y && x ≥ w.x + w.w - 66 && x < w.x + w.w - 46
+
 def Win.inBody (w : Win) (x y : Float) : Bool :=
   w.bodyX ≤ x && x < w.bodyX + w.bodyW && w.bodyY ≤ y && y < w.bodyY + w.bodyH
 
@@ -244,16 +264,70 @@ def Win.place (w : Win) (r : Rect) : Win × List Asked :=
   if moved.bodyW == w.bodyW && moved.bodyH == w.bodyH then (moved, [])
   else moved.heed (.resize moved.bodyW moved.bodyH)
 
-def World.hit (world : World) (x y : Float) : Option Win :=
-  world.windows.reverse.find? (·.contains x y)
+-- The windows that aren't minimized, back to front: those drawn, and
+-- those tiling and cascading would place.
+def World.visible (world : World) : List Win :=
+  world.windows.filter (!·.minimized)
 
--- What a press at (x, y) lands on: the frontmost window it's in or near
--- enough to grab an edge of, and the edges it grabs (none: inside, away
--- from the edges).
+-- The frontmost window at (x, y), above the bar.
+def World.hit (world : World) (x y : Float) : Option Win :=
+  if inBar y then none else world.visible.reverse.find? (·.contains x y)
+
+-- What a press at (x, y) above the bar lands on: the frontmost window
+-- it's in or near enough to grab an edge of, and the edges it grabs
+-- (none: inside, away from the edges).
 def World.grabAt (world : World) (x y : Float) : Option (Win × Edges) :=
-  world.windows.reverse.findSome? fun w =>
+  if inBar y then none else
+  world.visible.reverse.findSome? fun w =>
     let es := w.edgesAt x y
     if es.any || w.contains x y then some (w, es) else none
+
+/-! ### The taskbar
+
+A button for each window, in the order they opened, then the hint, then
+the count of earlier worlds at the right. The hint gives way when the
+buttons would be too narrow for their titles. The world lays it out, so
+that the view draws each button where a press finds it. -/
+
+def barTextSize : Float := 13
+def buttonMaxW : Float := 210
+def buttonGap : Float := 6
+def countW : Float := 150     -- the count of earlier worlds, at the right
+def barHint : String := "right-click: apps   ·   Ctrl+Shift+Z: undo   ·   Esc: quit"
+
+-- About how wide `s` is at `size`, in the proportional font. Lean can't
+-- measure it (Cairo does, in the shim), so this guesses, erring on the
+-- side of room: monospace's 0.6 em a letter, wider than most of the
+-- proportional font's letters, and half that for a space.
+def approxW (size : Float) (s : String) : Float :=
+  monoAdvance size * s.foldl (fun n c => n + if c == ' ' then 0.5 else 1) 0
+
+-- How wide the hint is, with the dot between it and the count.
+def hintW : Float := approxW barTextSize (barHint ++ "   ·   ")
+
+structure Taskbar where
+  buttons : List (Win × Float)  -- each window, and the left edge of its button
+  w : Float                     -- the width of every button
+  hint : Bool                   -- whether the hint has room
+
+def World.taskbar (world : World) : Taskbar :=
+  let ws := world.windows.mergeSort (·.id ≤ ·.id)
+  let n := ws.length.toFloat
+  let width (hint : Float) : Float :=
+    if ws.isEmpty then 0
+    else max 0 (min buttonMaxW ((screenW - 16 - countW - hint - buttonGap * (n - 1)) / n))
+  -- A dot and room around it, and the widest title.
+  let wanted := min buttonMaxW (48 + (ws.map (approxW barTextSize ·.title)).foldl max 0)
+  let hint := width hintW ≥ wanted
+  let bw := width (if hint then hintW else 0)
+  { buttons := ws.zipIdx.map fun (w, i) => (w, 8 + i.toFloat * (bw + buttonGap)),
+    w := bw, hint }
+
+-- The window whose button is at (x, y).
+def World.buttonAt (world : World) (x y : Float) : Option Win :=
+  if !inBar y then none else
+  let bar := world.taskbar
+  (bar.buttons.find? fun (_, bx) => bx ≤ x && x < bx + bar.w).map (·.1)
 
 def World.raise (world : World) (w : Win) : List Win :=
   world.windows.filter (·.id != w.id) ++ [w]
@@ -281,6 +355,30 @@ def World.toggleMax (world : World) (id : Nat) : World :=
     match w.restore with
     | some r => { w with restore := none }.place r
     | none => { w with restore := some w.rect }.place desktopRect
+
+-- The frontmost window that isn't minimized, or 0 if there's none.
+def World.frontmost (world : World) : Nat :=
+  (world.visible.getLast?.map (·.id)).getD 0
+
+-- Window `id` minimized, and if it had the focus, the frontmost window
+-- left has it.
+def World.minimize (world : World) (id : Nat) : World :=
+  if !world.windows.any (·.id == id) then world else
+  let world := { world with windows := world.windows.map fun w =>
+    if w.id == id then { w with minimized := true } else w }
+  if world.focus == id then { world with focus := world.frontmost } else world
+
+-- Window `id` in front and focused, and if it was minimized, back where
+-- it was.
+def World.focusOn (world : World) (id : Nat) : World :=
+  match world.windows.find? (·.id == id) with
+  | some w => { world with windows := world.raise { w with minimized := false }, focus := id }
+  | none => world
+
+-- What a press on window `w`'s button on the taskbar does: minimizes it
+-- if it's focused, or brings it to the front and focuses it.
+def World.pressButton (world : World) (w : Win) : World :=
+  if w.id == world.focus then world.minimize w.id else world.focusOn w.id
 
 def World.toFocus (world : World) (e : Event) : World :=
   world.tell (·.id == world.focus) e
@@ -328,7 +426,8 @@ def World.reload (world : World) (win : Nat) (name : Lean.Name) (app : App) : Wo
     world.windows.foldl (init := { world with windows := [] }) fun world w =>
       if w.origin == some name && w.id != win then
         let (nw, world) := world.fresh w.id app w.x w.y (some name) (some (w.bodyW, w.bodyH))
-        { world with windows := world.windows ++ [{ nw with restore := w.restore }] }
+        { world with windows := world.windows ++
+            [{ nw with restore := w.restore, minimized := w.minimized }] }
       else { world with windows := world.windows ++ [w] }
   else match world.windows.find? (·.id == win) with
     | some w => world.launch app (w.x + w.w + 12) w.y (some name)
@@ -342,6 +441,11 @@ def World.openMenu (world : World) (x y : Float) : World :=
 -- What an event does to the windows, with no menu in the way.
 def World.stepWindows (world : World) : Event → World
   | .press x y clicks =>
+    if inBar y then
+      match world.buttonAt x y with
+      | some w => world.pressButton w
+      | none => world
+    else
     match world.grabAt x y with
     | none => { world with focus := 0 }
     | some (w, es) =>
@@ -354,6 +458,7 @@ def World.stepWindows (world : World) : Event → World
           { world with drag := some { id := w.id, edges := es, start, px := x, py := y } }
         if es.any then grab es w.rect          -- an edge or a corner: resizes it
         else if w.onMax x y then world.toggleMax w.id
+        else if w.onMin x y then world.minimize w.id
         else if w.onTitle x y then
           if clicks % 2 == 0 then world.toggleMax w.id   -- a double click
           else grab .all (w.dragFrom x)                  -- moves it
@@ -378,6 +483,7 @@ def World.stepWindows (world : World) : Event → World
   | .key k m =>
     if desktopKey 'n' k m then world.openMenu world.mouseX world.mouseY
     else if desktopKey 'm' k m then world.toggleMax world.focus
+    else if desktopKey 'h' k m then world.minimize world.focus
     else world.toFocus (.key k m)
   | .text s => world.toFocus (.text s)
   -- The wheel goes to the window under the pointer, focused or not.
@@ -413,15 +519,16 @@ def World.takeAsked (world : World) : World × List Asked :=
   ({ world with outbox := [] }, world.outbox.reverse)
 
 -- Whether `e` starts a step undo can return to. A press does, unless it
--- only closes the menu, and so does a reload, so undo brings the old apps
--- back, and Ctrl+Shift+M with a window focused; nothing else does.
+-- only closes the menu or misses the taskbar's buttons, and so does a
+-- reload, so undo brings the old apps back, and with a window focused,
+-- Ctrl+Shift+M and Ctrl+Shift+H; nothing else does.
 def World.commits (world : World) : Event → Bool
   | .press x y _ =>
     match world.menu with
     | some m => (world.itemAt? m x y).isSome
-    | none => true
+    | none => !inBar y || (world.buttonAt x y).isSome
   | .reload .. => true
-  | .key k m => desktopKey 'm' k m && world.focus != 0
+  | .key k m => (desktopKey 'm' k m || desktopKey 'h' k m) && world.focus != 0
   | _ => false
 
 end LeanMachine

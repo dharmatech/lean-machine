@@ -46,7 +46,8 @@ def Key.show (k : Key) (m : Mods) : String :=
   (if m.shift then "Shift+" else "") ++ k.name
 
 -- The desktop's own keys are Ctrl+Shift and a letter: Ctrl+Shift+N opens
--- the menu of apps, Ctrl+Shift+Z undoes. Apps hear every other key.
+-- the menu of apps, M maximizes or restores the focused window, H
+-- minimizes it, Z undoes. Apps hear every other key.
 def desktopKey (c : Char) (k : Key) (m : Mods) : Bool :=
   k == .char c && m == ctrlShift
 

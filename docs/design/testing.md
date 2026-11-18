@@ -58,6 +58,24 @@ it's a normal window 300 narrower. A reload keeps a maximized clock
 maximized, and its box puts it back where it was. An editor on
 Clock.lean, maximized, shows 36 lines (`maximize.png`).
 
+Then minimizing and the taskbar. It prints the buttons at the start.
+Notes is minimized by its box, and focus goes to Inspector; a press
+where Notes was finds nothing (`taskbar.png`, the pointer on Clock's
+button). Notes' button brings it back in front and focused; pressed
+again, it minimizes Notes, and undo takes that back. Ctrl+Shift+H
+minimizes the focused window three times until nothing is focused,
+and once more makes no step undo returns to. Inspector's button brings
+it back. Clock, maximized, minimized and ticked at 10:09:00, comes back
+maximized saying 10:09:00; minimized again and reloaded, it stays
+minimized, comes back maximized, and its green box restores it. With
+Inspector maximized, the pointer 2 pixels into the bar on Clock's
+button lights no edge, and a click there focuses Clock. A click on the
+bar over Notes, dragged partly under it, does nothing and makes no
+step; dragged 300 further down, Notes stops with the top 20 pixels of
+its title above the bar. Last, Clock, Inspector, Notes and Clock are opened from the menu,
+one at a time, with each button's width and whether the hint has room:
+it gives way at six windows. Two are minimized (`taskbar-many.png`).
+
 Between the REPL's highlighting and its runs, `--test` tries the
 editor. It prints the tokens of six lines of a file that leave a
 comment, a nested comment, a string and a doc comment open for the next

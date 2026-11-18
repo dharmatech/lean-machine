@@ -127,7 +127,7 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   `inspector` and `notes` are the menu's two.
 - `World.lean`: windows, the pointer, the menu and events. Each window
   holds an app. `World.step : World → Event → World` moves, resizes,
-  maximizes, restores, raises, focuses and closes windows, passes ticks to every app, and passes other
+  maximizes, restores, minimizes, raises, focuses and closes windows, passes ticks to every app, and passes other
   events, keys and text included, to the focused window's app, moved
   into the app's coordinates; a run's outcome (`Event.done`) goes to the
   window that asked for it, and an app a run launched (`Event.launch`)
@@ -148,6 +148,15 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   (`Win.onMax`), a double click on the title (`Event.press`'s `clicks`)
   or Ctrl+Shift+M, and a drag makes it a normal window again, a title
   drag at its old size under the pointer (`Win.dragFrom`).
+  A minimized window (`Win.minimized`, from the yellow box, `Win.onMin`,
+  or Ctrl+Shift+H) keeps its place and `restore`, isn't drawn or found by
+  a press (`World.visible`), and still hears ticks; `World.minimize`
+  gives the focus to the frontmost window left, and `World.focusOn`
+  brings one back, raised and focused. The taskbar is in front of the
+  windows (`inBar`): `World.taskbar` lays out a button for each window,
+  by id, and says whether the hint has room, guessing text widths
+  (`approxW`); a press on a button (`World.buttonAt`) minimizes the
+  focused window or focuses another (`World.pressButton`).
   The world holds a `catalog` of apps, the menu's items, each by the
   name of its declaration (`LeanMachine.clock`), and each window
   remembers the declaration its app came from (`Win.origin`; none for
@@ -158,8 +167,9 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   from it, but the window that asked; it starts afresh there
   (`World.fresh`), at the window's place and size. With no such window, it
   opens one beside the window that asked. `World.commits` says which
-  events start a step undo can return to: a press that does something,
-  a reload, and Ctrl+Shift+M.
+  events start a step undo can return to: a press that does something
+  (not one that only closes the menu or misses the taskbar's buttons),
+  a reload, and Ctrl+Shift+M and Ctrl+Shift+H.
 - `Desktop.lean`: `Desktop` is the world now and every world before it;
   undo (Ctrl+Shift+Z) takes the previous one, apps' states included.
   The worlds kept for undo have empty outboxes, so undo never asks again.
@@ -171,7 +181,11 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
 - `View.lean`: `Desktop.view` returns a `Picture`. Each app's view is
   moved to its window's body and cut to it, with the grip over its
   bottom right corner. The edges a drag resizes, or that a press where
-  the pointer is would grab, are lit (`World.lit`). The menu draws
+  the pointer is would grab, are lit (`World.lit`). Minimized windows
+  aren't drawn. The taskbar (`World.barView`) draws each window's
+  button (`Win.button`: a dot and the title, underlined if focused, lit
+  under the pointer, dim if minimized), then the hint and the count of
+  earlier worlds as one right-aligned text. The menu draws
   over everything, its item under the pointer lit.
 - `Host.lean`: the calls into `shim.c` (a canvas and one window),
   `Event.decode` for the events the shim hands back as a `RawEvent` (a

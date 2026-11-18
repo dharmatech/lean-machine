@@ -12,8 +12,9 @@ def litRgb : UInt32 := 0x7dcfff   -- an edge the pointer would grab, or is dragg
 
 -- A window, its edges `lit` lit. The grip in the body's bottom right
 -- corner, drawn over the app, says that the window can be resized. On the
--- title, the close box, and left of it the box that maximizes the window,
--- with a hole in it while the window is maximized, to restore it.
+-- title, the close box; left of it the box that maximizes the window,
+-- with a hole in it while the window is maximized, to restore it; and
+-- left of that the box that minimizes it.
 def Win.view (w : Win) (focused : Bool) (lit : Edges := {}) : Picture :=
   let titleRgb : UInt32 := if focused then 0xbb9af7 else 0x565f89
   let right := w.x + w.w
@@ -34,6 +35,7 @@ def Win.view (w : Win) (focused : Bool) (lit : Edges := {}) : Picture :=
     .text (w.x + 12) (w.y + 19) 14 0x1a1b26 w.title,
     .rect (right - 22) (w.y + 7) 14 14 3 (if focused then 0xf7768e else 0x414868),
     .rect (right - 42) (w.y + 7) 14 14 3 (if focused then 0x9ece6a else 0x414868),
+    .rect (right - 62) (w.y + 7) 14 14 3 (if focused then 0xe0af68 else 0x414868),
     if w.maximized then .rect (right - 38) (w.y + 11) 6 6 1 titleRgb else .group [],
     -- The app draws in its own coordinates, cut to the body.
     .translate w.bodyX w.bodyY
@@ -65,20 +67,43 @@ def World.menuView (world : World) (m : Menu) : Picture :=
         [.textIn (m.x + 14) y (menuW - 28) itemH 14 .left
            (if on then 0xc0caf5 else 0x9aa5ce) app.title]))
 
+-- Window `w`'s button on the taskbar, at `x` and `bw` wide: a dot, then
+-- the title, cut to the button. The focused window's is filled and
+-- underlined, and one under the pointer filled more faintly; a minimized
+-- window's dot and title are dim.
+def Win.button (w : Win) (x bw : Float) (focused hovered : Bool) : Picture :=
+  let fill : List Picture :=
+    if focused then [.rect x (barY + 4) bw (barH - 8) 6 0x292e42,
+                     .rect (x + 12) (barY + barH - 6) (bw - 24) 2 1 0xbb9af7]
+    else if hovered then [.rect x (barY + 4) bw (barH - 8) 6 0x1f2335]
+    else []
+  .group (fill ++
+    [.circle (x + 15) (barY + barH / 2) 4
+       (if w.minimized then 0x414868 else if focused then 0xbb9af7 else 0x7aa2f7),
+     .clip (x + 27) barY (bw - 36) barH
+       (.textIn (x + 27) barY (bw - 36) barH barTextSize .left
+         (if w.minimized then 0x565f89 else 0xc0caf5) w.title)])
+
+-- The taskbar along the bottom, `earlier` the number of earlier worlds:
+-- the windows' buttons, then the hint if it has room and the count, as
+-- one text at the right, so that Cairo spaces them.
+def World.barView (world : World) (earlier : Nat) : Picture :=
+  let bar := world.taskbar
+  let hovered := ((world.buttonAt world.mouseX world.mouseY).map (·.id)).getD 0
+  .group ([.rect 0 barY screenW barH 0 0x16161e] ++
+    bar.buttons.map (fun (w, x) => w.button x bar.w (w.id == world.focus) (w.id == hovered)) ++
+    [.textIn (screenW - countW - hintW) barY (countW + hintW - 14) barH barTextSize .right
+       0x7aa2f7 ((if bar.hint then barHint ++ "   ·   " else "") ++ s!"{earlier} earlier worlds")])
+
 def Desktop.view (d : Desktop) : Picture :=
   let world := d.now
   let lit := world.lit
   .group ([.rect 0 0 screenW screenH 0 0x24283b] ++
-    world.windows.map (fun w => w.view (w.id == world.focus)
+    world.visible.map (fun w => w.view (w.id == world.focus)
       (match lit with
        | some (id, es) => if id == w.id then es else {}
        | none => {})) ++
-    [.rect 0 (screenH - barH) screenW barH 0 0x16161e,
-     .text 14 (screenH - 10) 13 0x7aa2f7
-       s!"{d.past.length} earlier worlds   ·   \
-          right-click or Ctrl+Shift+N: open an app   ·   drag a title or an edge   ·   \
-          click in a window, then type   ·   boxes on a title: maximize, close   ·   \
-          Ctrl+Shift+Z undo   ·   Esc quits"] ++
+    [world.barView d.past.length] ++
     world.menu.toList.map world.menuView)
 
 end LeanMachine

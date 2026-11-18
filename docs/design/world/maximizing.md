@@ -6,7 +6,9 @@ swaps the two: maximizing keeps the window's place and puts it at
 `desktopRect`, the screen above the bar; restoring puts it back. Both
 go through `World.place`, so the app hears its new size
 ([An app hears its size](app-size.md)). A reload into a maximized
-window keeps it maximized, with the same place to go back to.
+window keeps it maximized, with the same place to go back to, and so
+does minimizing it ([A minimized window is still in the
+world](minimizing.md)).
 
 A maximized window that's dragged stops being maximized. Dragged by its
 title, it takes its old size under the pointer, as far along the title

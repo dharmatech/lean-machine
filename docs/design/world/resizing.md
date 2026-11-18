@@ -12,7 +12,10 @@ never builds up rounding.
 A window resized by hand stays at least `minW` by `minH` (200 × 140,
 enough for the title's close box and three lines of the editor). An
 edge being dragged stops at the desktop's edges, the bar included,
-unless it was already past them. A move goes anywhere, as before.
+unless it was already past them. A move goes anywhere but under the
+taskbar: the bar is in front of the windows and takes presses, so a
+window stops with the top 20 pixels of its title above it
+(`titleKept`), where a press can find it.
 
 The frame is 3 pixels wide, too thin to hit easily, so an edge can be
 grabbed from up to 4 pixels outside it (`reach`). Within 16 pixels of
