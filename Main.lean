@@ -1278,6 +1278,45 @@ def testFrames (c : Canvas) (svc : Services) : IO Unit := do
     {d.now.windows.map (·.title)}; animates {d.now.animating}"
   render c (steps d [.frame 700]).view; shot c "frames-repl.png"
 
+/-! ### Boids, for `testBoids` -/
+
+-- Boids from the menu: keys, frames, minimizing, and what a frame costs
+-- at 150 boids and at 1000.
+def testBoids (c : Canvas) : IO Unit := do
+  IO.println "Boids:"
+  let item (x y : Float) (i : Nat) : Event := .press (x + 20) (Menu.itemY ⟨x, y⟩ i + itemH / 2)
+  let key (k : Key) : Event := .key k {}
+  let frames (from_ n : Nat) : List Event := (List.range n).map fun i => .frame (from_ + 16 * i)
+  let focused (d : Desktop) : String :=
+    ((d.now.windows.find? (·.id == d.now.focus)).map (·.title)).getD "none"
+  let d := steps start [.tick ⟨10, 8, 30⟩, .menu 20 20, item 20 20 5]
+  IO.println s!"  from the menu: windows {d.now.windows.map (·.title)}, focus on {focused d}, \
+    animates {d.now.animating}"
+  let d := steps d (frames 1000 60)
+  render c d.view; shot c "boids.png"
+  let paused := steps d [key (.char ' ')]
+  IO.println s!"  Space: animates {paused.now.animating}; again: \
+    {(steps paused [key (.char ' ')]).now.animating}"
+  render c paused.view; shot c "boids-paused.png"
+  let hidden := steps d [.key (.char 'h') ctrlShift]
+  IO.println s!"  minimized: animates {hidden.now.animating}"
+  -- What a frame costs: the step (a frame to the world, whose Boids
+  -- steps its flock), the view, and drawing it.
+  let cost (d : Desktop) (label : String) : IO Unit := do
+    let stepUs ← usPer 50 fun i => do
+      if !(d.step (.frame (5000 + 16 * i))).now.animating then IO.println "?"
+    let viewUs ← usPer 50 fun i =>
+      match (if i == 50 then start else d).view with
+      | .group [] => IO.println "?"
+      | _ => pure ()
+    let drawUs ← usPer 50 fun _ => render c d.view
+    IO.println s!"  {label}: a frame's step {stepUs} µs, the desktop's view {viewUs} µs, \
+      drawn in {drawUs} µs"
+  cost d "150 boids"
+  let many := steps d (List.replicate 17 (key .up) ++ frames 2000 60)
+  render c many.view; shot c "boids-1000.png"
+  cost many "1000 boids"
+
 /-! ## `--bench`: Boids' step -/
 
 section Bench
@@ -1331,7 +1370,7 @@ def main (args : List String) : IO Unit := do
     IO.FS.createDirAll testOut
     IO.println s!"the REPLs' Lean imported in {((← IO.monoNanosNow) - t0) / 1000000} ms, \
       RSS {← rssMB} MB"
-    test c svc; testResize c svc; testMaximize c svc; testMinimize c; testFrames c svc; testLean c svc; testEditor c svc; testReload c svc; testRuns c svc; testMasking
+    test c svc; testResize c svc; testMaximize c svc; testMinimize c; testFrames c svc; testBoids c; testLean c svc; testEditor c svc; testReload c svc; testRuns c svc; testMasking
   | ["--bench"] =>
     let _ ← IO.wait base
     benchBoids

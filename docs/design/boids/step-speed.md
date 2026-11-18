@@ -34,4 +34,8 @@ frame. The likely reasons for the gap:
 
 None of these has been measured on its own.
 
+In the window, the step isn't all of a frame: at 1000 boids, drawing
+them costs more ([At 1000 boids, drawing costs more than the
+step](drawing-costs-more.md)).
+
 [↑ Boids](README.md)

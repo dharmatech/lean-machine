@@ -128,10 +128,17 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   drops a dot where it lands; it shows what was typed into it, the
   last key it heard, and its size beside the size it heard.
   `inspector` and `notes` are the menu's two.
-- `Apps/Boids/`: Boids, Craig Reynolds' flocking, after the first port
-  to Schevana; so far the simulation, with no app
-  ([Boids](boids/README.md)). The modules import only Init and each
-  other, and each ends with `#guard`s that run as it builds.
+- `Apps/Boids.lean`: Boids, Craig Reynolds' flocking, after the first
+  port to Schevana ([Boids](boids/README.md)). Its `State` is the flock,
+  its rules, the `StdGen` that scatters it and picks random rules, the
+  body's size, whether it runs, and the frames' pace, smoothed. A frame
+  steps the flock (`Flock.stepOn`) while it runs; R, D, S, Up, Down and
+  Space change it; the app animates while it runs. The view draws each
+  boid as a dot and a line toward its heading, cut to the field, and a
+  status line with the count and frames a second. `#guard`s check the
+  keys and the pace as it builds.
+- `Apps/Boids/`: Boids' simulation. The modules import only Init and
+  each other, and each ends with `#guard`s that run as it builds.
   - `Vec.lean`: a vector in the plane, with `+`, `-`, `* k` and `/ k`
     through Lean's classes, `dot`, `length2`, `length`, `perp` and
     `mean`, all `@[inline]`; and `pi`.
@@ -199,7 +206,7 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   undo (Ctrl+Shift+Z) takes the previous one, apps' states included.
   The worlds kept for undo have empty outboxes, so undo never asks again.
   The start desktop opens the REPL, Clock, Inspector and Notes. Also `catalog`,
-  what the menu opens (Clock, REPL, Editor, Inspector, Notes), each
+  what the menu opens (Clock, REPL, Editor, Inspector, Notes, Boids), each
   named with a ``` ``name ``` literal, which Lean checks is a declaration,
   and `start`, the desktop the program starts with, opened with
   `launch` as the menu would.
@@ -280,7 +287,7 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   them, then the outcomes of runs that ended, stops the runs of windows
   that are gone, ticks with the time, gives a frame if one is due
   (`framePeriod` apart, `nextFrameAfter`), and draws. Also `test`,
-  `testResize`, `testMaximize`, `testFrames`, `testLean`, `testEditor`, `testReload`, `testRuns` and `testMasking` for `--test`
+  `testResize`, `testMaximize`, `testFrames`, `testBoids`, `testLean`, `testEditor`, `testReload`, `testRuns` and `testMasking` for `--test`
   (`answerNow` steps an app's state and answers what it asks at once),
   `benchBoids` for `--bench`, and `main`.
 - `shim.c`: Cairo draws into an image in memory, and SDL3 shows it in

@@ -23,6 +23,8 @@ foundation.
 - a Lean REPL, running inside the desktop itself
 - a simple editor for the desktop's own Lean files, which can reload an
   app while it runs
+- Boids, a flock of birds (Craig Reynolds' flocking), whose simulation
+  is its own small modules
 
 The whole desktop is one value that never changes in place, so one undo
 takes everything back: windows, definitions made in the REPL, even

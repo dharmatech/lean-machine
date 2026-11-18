@@ -89,6 +89,14 @@ it hears them again. Last, the three lines of
 [A spinner, made in the REPL](../explore/spinner.md) are typed into a
 REPL, which opens a spinner that animates (`frames-repl.png`).
 
+Then Boids, opened from the menu: it's focused, and the desktop
+animates. After 60 frames it's drawn (`boids.png`). Space pauses it,
+and the desktop stops animating, until Space again
+(`boids-paused.png`); minimized, it doesn't animate either. It times a
+frame at 150 boids and, after Up 17 times and 60 more frames, at 1000
+(`boids-1000.png`): the step (the world hearing the frame), the
+desktop's view, and drawing it.
+
 Between the REPL's highlighting and its runs, `--test` tries the
 editor. It prints the tokens of six lines of a file that leave a
 comment, a nested comment, a string and a doc comment open for the next

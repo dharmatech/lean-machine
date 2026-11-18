@@ -6,5 +6,6 @@
   - [Colours and Tab](repl-colours.md)
 - [The editor](editor.md): the desktop's own Lean files
   - [Reloading an app](reloading.md)
+- [Boids](boids.md): a flock of birds
 
 [↑ Lean Machine](../../README.md)
