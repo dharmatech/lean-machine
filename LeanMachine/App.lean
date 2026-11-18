@@ -148,6 +148,10 @@ inductive AppEvent where
   -- first tick, and whenever its size changes. A view is given the same
   -- size; a step that needs it (how many lines fit) keeps it in its state.
   | resize (w h : Float)
+  -- A frame is about to be drawn: 60 a second, while the app animates
+  -- and its window isn't minimized. `ms` is a clock's milliseconds, a
+  -- clock that only goes forward, from no particular start.
+  | frame (ms : Nat)
 
 -- The side of the grip the desktop draws in the bottom right corner of
 -- a window's body, over the app: a press there resizes the window. An
@@ -162,6 +166,10 @@ structure App where
   view : Float → Float → Picture          -- at a width and height
   step : AppEvent → Option (App × List Request) := fun _ => none
   size : Float × Float := (414, 229)      -- the body a new window gives it, at first
+  -- Whether it wants frames now. While an app in a window that isn't
+  -- minimized does, the loop draws 60 frames a second, and the apps that
+  -- animate hear `frame` before each.
+  animating : Bool := false
 
 instance : Inhabited App := ⟨{ title := "", view := fun _ _ => .group [] }⟩
 
@@ -169,20 +177,22 @@ instance : Inhabited App := ⟨{ title := "", view := fun _ _ => .group [] }⟩
 -- for then (`none`: no change and nothing asked), and how it looks. The
 -- state's type stays inside the app. Only this is `partial`; the functions
 -- an app passes it can be total.
--- The title is `title`, unless `titleOf` says what it is in a state.
+-- The title is `title`, unless `titleOf` says what it is in a state;
+-- `animating` says whether it wants frames in a state.
 partial def App.asking {σ : Type} (title : String) (s : σ)
     (step : σ → AppEvent → Option (σ × List Request))
     (view : σ → Float → Float → Picture)
-    (size : Float × Float := (414, 229)) (titleOf : σ → String := fun _ => title) : App :=
-  { title := titleOf s, view := view s, size,
+    (size : Float × Float := (414, 229)) (titleOf : σ → String := fun _ => title)
+    (animating : σ → Bool := fun _ => false) : App :=
+  { title := titleOf s, view := view s, size, animating := animating s,
     step := fun e => (step s e).map fun (s, asks) =>
-      (App.asking title s step view size titleOf, asks) }
+      (App.asking title s step view size titleOf animating, asks) }
 
 -- An app that never asks for anything: an event only changes its state
 -- (`none`: it doesn't).
 def App.of {σ : Type} (title : String) (s : σ)
     (step : σ → AppEvent → Option σ) (view : σ → Float → Float → Picture)
-    (size : Float × Float := (414, 229)) : App :=
-  App.asking title s (fun s e => (step s e).map (·, [])) view size
+    (size : Float × Float := (414, 229)) (animating : σ → Bool := fun _ => false) : App :=
+  App.asking title s (fun s e => (step s e).map (·, [])) view size (animating := animating)
 
 end LeanMachine

@@ -1,6 +1,7 @@
 # Drawing and input
 
 - [Speed](speed.md)
+- [A frame costs more when frames are apart](frames-apart.md)
 - [Text out of the shim](text-out-of-the-shim.md)
 - [Keys and text are separate events](keys-and-text.md)
 - [Ctrl+Shift+U belongs to IBus](ctrl-shift-u.md)

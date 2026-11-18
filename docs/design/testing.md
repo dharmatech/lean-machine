@@ -80,6 +80,15 @@ its title left of the boxes, on its top edge above them and on its right
 edge (only the first), and on a maximized Notes' green box (`boxes.png`,
 the REPL's behind Notes; `boxes-max.png`, the restore glyph).
 
+Then frames. The start desktop doesn't animate. A spinner (a line that
+the frames it hears turn, the last frame's time in its title) opens as
+a run in the REPL would open it. After frames at 1000 and 1017 ms, its
+title says 1017, and the frames made no undo step (`frames.png`).
+Minimized, it hears no frames, and the desktop doesn't animate; undone,
+it hears them again. Last, the three lines of
+[A spinner, made in the REPL](../explore/spinner.md) are typed into a
+REPL, which opens a spinner that animates (`frames-repl.png`).
+
 Between the REPL's highlighting and its runs, `--test` tries the
 editor. It prints the tokens of six lines of a file that leave a
 comment, a nested comment, a string and a doc comment open for the next

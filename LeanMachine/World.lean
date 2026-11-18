@@ -97,6 +97,7 @@ inductive Event where
   | key (k : Key) (mods : Mods)
   | text (s : String)
   | tick (t : TimeOfDay)      -- from the loop, not the host
+  | frame (ms : Nat)          -- from the loop: 60 a second while an app animates
   | done (win tag : Nat) (outcome : Outcome) (ms : Nat)  -- from the loop: a run ended
   | launch (win : Nat) (app : App)  -- from the loop: a run in window `win` opened `app`
   | wheel (x y dy : Float)    -- dy steps away from the user, with the pointer at (x, y)
@@ -244,6 +245,7 @@ def Win.toApp (w : Win) : Event → Option AppEvent
   | .key k m => some (.key k m)
   | .text s => some (.text s)
   | .tick t => some (.tick t)
+  | .frame ms => some (.frame ms)
   | .done _ tag o ms => some (.done tag o ms)
   | .wheel x y dy => some (.wheel (x - w.bodyX) (y - w.bodyY) dy)
   | .menu .. | .launch .. | .reload .. | .quit => none
@@ -272,6 +274,11 @@ def Win.place (w : Win) (r : Rect) : Win × List Asked :=
 -- those tiling and cascading would place.
 def World.visible (world : World) : List Win :=
   world.windows.filter (!·.minimized)
+
+-- Whether an app in a window that isn't minimized wants frames: the
+-- loop draws 60 a second while one does.
+def World.animating (world : World) : Bool :=
+  world.visible.any (·.app.animating)
 
 -- The frontmost window at (x, y), above the bar.
 def World.hit (world : World) (x y : Float) : Option Win :=
@@ -496,6 +503,7 @@ def World.stepWindows (world : World) : Event → World
     | some w => world.tell (·.id == w.id) (.wheel x y dy)
     | none => world
   | .tick t => { world.toAll (.tick t) with time := t }
+  | .frame ms => world.tell (fun w => !w.minimized && w.app.animating) (.frame ms)
   | .done win tag o ms => world.tell (·.id == win) (.done win tag o ms)
   | .launch win app =>
     match world.windows.find? (·.id == win) with

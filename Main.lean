@@ -30,19 +30,38 @@ partial def feed (svc : Services) (d : Desktop) (runs : Runs) :
       answers := answers ++ more
     feed svc d runs (rest ++ answers)
 
--- Applies every waiting event, the outcomes of runs that ended, and a
--- tick with the time, then draws once. `frames` stops it early (for
+-- How far apart frames are while an app animates, in nanoseconds: 60 a
+-- second.
+def framePeriod : Nat := 1000000000 / 60
+
+-- When the next frame is due, after one due at `due` and drawn at `now`:
+-- a period after `due`, so that frames keep time, unless the loop fell a
+-- whole period behind; then a period from `now`, so that the frames it
+-- missed aren't drawn all at once.
+def nextFrameAfter (due now : Nat) : Nat :=
+  if now < due + framePeriod then due + framePeriod else now + framePeriod
+
+#guard nextFrameAfter 0 5000000000 == 5000000000 + framePeriod  -- the first in a while
+#guard nextFrameAfter 1000 2001000 == 1000 + framePeriod         -- 2 ms late, on time
+#guard nextFrameAfter 1000 50001000 == 50001000 + framePeriod    -- 50 ms late
+
+-- Applies every waiting event, the outcomes of runs that ended, a tick
+-- with the time, and a frame if one is due (at `due`, in nanoseconds on
+-- the monotonic clock), then draws once. `frames` stops it early (for
 -- tests); the window's close button or Esc stops it any time.
 partial def run (c : Canvas) (svc : Services) (d : Desktop) (runs : Runs)
-    (frames : Option Nat) : IO Unit := do
+    (frames : Option Nat) (due : Nat := 0) : IO Unit := do
   if frames == some 0 then runs.stopAll; return
   let mut d := d
   let mut runs := runs
   let mut quit := false
   -- Waits for an event, but not past 100 ms or the start of the next
-  -- second, so a clock turns over on time. A run that ends wakes it.
+  -- second, so a clock turns over on time, and while an app animates, not
+  -- past the next frame. A run that ends wakes it.
   let (_, msLeft) ← localTime
-  let mut raw ← Host.event (min 100 (msLeft + 1)).toUInt32
+  let toFrame := (due - (← IO.monoNanosNow) + 999999) / 1000000
+  let wait := min (msLeft + 1) (if d.now.animating then toFrame else 100)
+  let mut raw ← Host.event wait.toUInt32
   while raw.nums.get! 0 != 0 do
     match Event.decode raw with
     | some .quit => quit := true
@@ -61,9 +80,15 @@ partial def run (c : Canvas) (svc : Services) (d : Desktop) (runs : Runs)
   runs ← runs.keepFor (d.now.windows.map (·.id))
   let (t, _) ← localTime
   (d, runs) ← feed svc d runs [.tick t]
+  -- The apps that animate hear a frame, if one is due.
+  let now ← IO.monoNanosNow
+  let mut due := due
+  if d.now.animating && now ≥ due then
+    (d, runs) ← feed svc d runs [.frame (now / 1000000)]
+    due := nextFrameAfter due now
   render c d.view
   Host.present c
-  run c svc d runs (frames.map (· - 1))
+  run c svc d runs (frames.map (· - 1)) due
 
 -- One of each kind of picture, for `--test`: lines, circles, text placed in
 -- boxes, and a picture moved and cut to a box.
@@ -1205,6 +1230,54 @@ def testMinimize (c : Canvas) : IO Unit := do
   IO.println s!"  Notes maximized, the pointer on its green box: {boxesAt d (screenW - 36) 14}"
   render c (d.step (.motion (screenW - 36) 14)).view; shot c "boxes-max.png"
 
+/-! ### Frames, for `testFrames` -/
+
+-- A hand that the frames it hears turn, once every π seconds, with the
+-- last frame's time in its title.
+def spinner : App :=
+  App.asking "Spin" (0 : Nat) (fun _ e => match e with | .frame ms => some (ms, []) | _ => none)
+    (fun ms w h =>
+      let a := ms.toFloat / 500
+      .line (w / 2) (h / 2) (w / 2 + 80 * a.cos) (h / 2 + 80 * a.sin) 4 0xf7768e)
+    (titleOf := fun ms => s!"Spin {ms}") (animating := fun _ => true)
+
+-- A spinner made in the REPL, as docs/explore/spinner.md types it.
+def spinnerLines : List String :=
+  ["def hand (ms : Nat) (w h : Float) : Picture := let a := ms.toFloat / 500; \
+      .line (w / 2) (h / 2) (w / 2 + 80 * a.cos) (h / 2 + 80 * a.sin) 4 0xf7768e",
+   "def hear : Nat → AppEvent → Option Nat | _, .frame ms => some ms | _, _ => none",
+   "launch (App.of \"Spin\" 0 hear hand (animating := fun _ => true))"]
+
+def testFrames (c : Canvas) (svc : Services) : IO Unit := do
+  IO.println "frames:"
+  let start := steps start [.tick ⟨10, 8, 30⟩]
+  let spin (d : Desktop) : String :=
+    ((d.now.windows.find? (·.title.startsWith "Spin")).map (·.title)).getD "none"
+  let focused (d : Desktop) : String :=
+    ((d.now.windows.find? (·.id == d.now.focus)).map (·.title)).getD "none"
+  IO.println s!"  the start desktop animates: {start.now.animating}"
+  -- A spinner, as a run in the REPL (window 1) would open it.
+  let d := steps start [.launch 1 spinner, .frame 1000, .frame 1017]
+  IO.println s!"  a spinner opened, focus on {focused d}: animates {d.now.animating}; \
+    after frames at 1000 and 1017 ms: {spin d}; earlier worlds {d.past.length}, as before \
+    {start.past.length}"
+  render c d.view; shot c "frames.png"
+  -- Minimized, it hears no frames, and the desktop doesn't animate.
+  let dm := steps d [.key (.char 'h') ctrlShift, .frame 2000]
+  IO.println s!"  minimized: animates {dm.now.animating}; after a frame at 2000 ms: {spin dm}"
+  let db := steps dm [undoKey, .frame 3000]
+  IO.println s!"  undone: animates {db.now.animating}; after a frame at 3000 ms: {spin db}"
+  -- Made in the REPL: compiled there, and turned by the same frames.
+  let mut d := start
+  let mut seen := []
+  for line in spinnerLines do
+    let (d', runs) ← feed svc d {} [.press 120 200, .text line, .key .enter {}]
+    let (d', _, ended) ← settle svc d' runs
+    d := d'; seen := seen ++ ended
+  IO.println s!"  a spinner made in the REPL: {seen.map (·.showDone)}; windows \
+    {d.now.windows.map (·.title)}; animates {d.now.animating}"
+  render c (steps d [.frame 700]).view; shot c "frames-repl.png"
+
 /-! ## `--bench`: Boids' step -/
 
 section Bench
@@ -1258,7 +1331,7 @@ def main (args : List String) : IO Unit := do
     IO.FS.createDirAll testOut
     IO.println s!"the REPLs' Lean imported in {((← IO.monoNanosNow) - t0) / 1000000} ms, \
       RSS {← rssMB} MB"
-    test c svc; testResize c svc; testMaximize c svc; testMinimize c; testLean c svc; testEditor c svc; testReload c svc; testRuns c svc; testMasking
+    test c svc; testResize c svc; testMaximize c svc; testMinimize c; testFrames c svc; testLean c svc; testEditor c svc; testReload c svc; testRuns c svc; testMasking
   | ["--bench"] =>
     let _ ← IO.wait base
     benchBoids

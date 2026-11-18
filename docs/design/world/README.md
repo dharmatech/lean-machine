@@ -13,6 +13,7 @@
 - [A title's boxes say what they do](title-boxes.md)
 - [A mutable variable can't be shadowed](mutable-not-shadowed.md)
 - [A title from the state](title-from-state.md)
+- [An app says from its state whether it animates](frames.md)
 - [A pattern variable can be a constructor](pattern-variable-constructor.md)
 
 [↑ Design](../README.md)

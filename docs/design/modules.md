@@ -48,13 +48,15 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   and `complete`, what a name being typed could become.
   `App.asking` makes an app from a state of any type, a step and a view,
   and hides the state's type, so the desktop holds apps of every kind
-  in one list, and can take the title from the state (`titleOf`);
+  in one list, and can take the title from the state (`titleOf`), and
+  whether it wants frames (`animating`);
   `App.of` makes one that never asks. `AppEvent` is an
   event in the app's own coordinates, a key with its modifiers, typed
   text, a turn of the wheel, a tick with the `TimeOfDay`, a run's
-  outcome (`done`), or the body's size (`resize`), heard as the window
-  opens and whenever its size changes. `gripSize` is the corner of the
-  body the desktop's grip covers.
+  outcome (`done`), the body's size (`resize`), heard as the window
+  opens and whenever its size changes, or a frame (`frame`, with a
+  monotonic clock's milliseconds), 60 a second while the app animates.
+  `gripSize` is the corner of the body the desktop's grip covers.
 - `Safepoint.lean`: what compiled code calls where a stop may reach it.
   `poll x` is `x`, a safepoint in C. `safepoint` and `interruptNow` are
   the calls the REPL's Lean puts at the start of every function it
@@ -148,7 +150,9 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
     `wrap`, `stepOn` (a frame), `scatter` and `resize`.
 - `World.lean`: windows, the pointer, the menu and events. Each window
   holds an app. `World.step : World → Event → World` moves, resizes,
-  maximizes, restores, minimizes, raises, focuses and closes windows, passes ticks to every app, and passes other
+  maximizes, restores, minimizes, raises, focuses and closes windows, passes ticks to every app,
+  frames (`Event.frame`) to the apps that animate in windows that
+  aren't minimized (`World.animating`: whether there are any), and passes other
   events, keys and text included, to the focused window's app, moved
   into the app's coordinates; a run's outcome (`Event.done`) goes to the
   window that asked for it, and an app a run launched (`Event.launch`)
@@ -271,10 +275,12 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   `LeanMachine` open, as the REPLs' Lean has it.
 - `Main.lean`: `run`, the loop. `feed` steps the desktop through events
   and hands what its apps ask to `Runs`, with the world they asked in. Each pass waits for events, but
-  not past 100 ms or the next second (a run that ends wakes it), applies
+  not past 100 ms or the next second, nor, while an app animates, past
+  the next frame (a run that ends wakes it), applies
   them, then the outcomes of runs that ended, stops the runs of windows
-  that are gone, ticks with the time, and draws. Also `test`,
-  `testResize`, `testMaximize`, `testLean`, `testEditor`, `testReload`, `testRuns` and `testMasking` for `--test`
+  that are gone, ticks with the time, gives a frame if one is due
+  (`framePeriod` apart, `nextFrameAfter`), and draws. Also `test`,
+  `testResize`, `testMaximize`, `testFrames`, `testLean`, `testEditor`, `testReload`, `testRuns` and `testMasking` for `--test`
   (`answerNow` steps an app's state and answers what it asks at once),
   `benchBoids` for `--bench`, and `main`.
 - `shim.c`: Cairo draws into an image in memory, and SDL3 shows it in
