@@ -4,11 +4,42 @@ So far Lean Machine is only tested on Ubuntu 26.04.
 
 ## What it needs
 
-Needs Lean 4.36 through elan (`lean-toolchain` pins it), Cairo, SDL3's
-shared library, and a C++ compiler (`c++`). SDL3's headers
-(`libsdl3-dev`) are not needed. The desktop reads the .olean files of
-the Lean it was built with when it runs, so that toolchain must stay
-installed.
+- Lean 4.36, through elan (`lean-toolchain` pins it)
+- Cairo, with its headers, found through `pkg-config`
+- SDL3's shared library (its headers, `libsdl3-dev`, are not needed)
+- a C compiler (`cc`) and a C++ compiler (`c++`)
+
+The desktop reads the .olean files of the Lean it was built with when it
+runs, so that toolchain must stay installed.
+
+## Installing what it needs
+
+### Ubuntu 26.04
+
+A fresh Ubuntu 26.04 desktop already has Cairo's library and the fonts
+the desktop draws with. This installs the rest, with curl and git to
+fetch elan and the code:
+
+```sh
+sudo apt install build-essential pkg-config libcairo2-dev libsdl3-0 curl git
+```
+
+Then elan, Lean's toolchain manager. The first build installs the Lean
+that `lean-toolchain` names.
+
+```sh
+curl https://elan.lean-lang.org/elan-init.sh -sSf | sh
+source ~/.elan/env
+```
+
+Other systems haven't been tried yet.
+
+## Get the code
+
+```sh
+git clone https://github.com/dharmatech/lean-machine.git
+cd lean-machine
+```
 
 ## Build and run
 
