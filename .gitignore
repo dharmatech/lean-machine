@@ -1,4 +1,2 @@
-# build products
+# build products, and what desktop --test writes (.lake/test/)
 .lake/
-# written by desktop --test
-*.png

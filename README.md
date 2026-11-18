@@ -99,10 +99,11 @@ the earlier worlds that undo can return to.
 SDL_VIDEO_DRIVER=dummy .lake/build/bin/desktop --frames 20   # the same, with no display
 ```
 
-`--test` writes `after-script.png`, `after-undo.png`, `menu.png` (the
-menu open) and `repl.png` (the REPL after a script of typing, editing
-and history) in the current directory, and `sampler.png`, one of each
-kind of picture. It also prints the REPL's line, history and first
+`--test` puts what it writes in `.lake/test/`, wherever it runs from;
+git ignores it, and it can be deleted at any time. It writes
+`after-script.png`, `after-undo.png`, `menu.png` (the menu open) and
+`repl.png` (the REPL after a script of typing, editing and history),
+and `sampler.png`, one of each kind of picture. It also prints the REPL's line, history and first
 entries after that script, and what `Event.decode` makes of a few
 events as the shim hands them back, and the monospace font's own
 advance beside `monoAdvance`'s. It prints the tokens the REPL's Lean
@@ -135,7 +136,7 @@ Between the REPL's highlighting and its runs, `--test` tries the
 editor. It prints the tokens of six lines of a file that leave a
 comment, a nested comment, a string and a doc comment open for the next
 line. An editor on its own, its requests answered at once, opens a
-scratch copy in `.lake/editor-test/`: it prints the file's lines, where
+scratch copy in `.lake/test/editor/`: it prints the file's lines, where
 each starts and what it leaves open, after `/- ` is typed at the top and
 after ` -/` closes it three lines down, after Enter and Backspace join
 and split lines, then saves (Ctrl+S) and prints what's on disk, and

@@ -147,6 +147,14 @@ def stepNow (svc : Services) (d : Desktop) (e : Event) : IO Desktop := do
   let (d, _, _) ← settle svc d runs
   return d
 
+-- Where `--test` puts what it makes, the pictures and the editor's
+-- scratch file, wherever it runs from. It's under .lake, which git
+-- ignores, and can be deleted at any time.
+def testOut : System.FilePath := projectRoot / ".lake" / "test"
+
+-- The canvas as a picture in `testOut`.
+def shot (c : Canvas) (name : String) : IO Unit := c.savePng (testOut / name).toString
+
 -- The pure world, driven by a script of events instead of a person.
 def test (c : Canvas) (svc : Services) : IO Unit := do
   let grab := Event.press 300 (160 + 10)          -- Clock's title
@@ -178,19 +186,19 @@ def test (c : Canvas) (svc : Services) : IO Unit := do
   let clockWin := d.now.windows.find? (·.title == "Clock")
   IO.println s!"Clock at {clockWin.map (·.x)} {clockWin.map (·.y)}; \
     in the start world still at {(start.now.windows.find? (·.title == "Clock")).map (·.x)}"
-  render c d.view; c.savePng "after-script.png"
+  render c d.view; shot c "after-script.png"
   -- The menu open, the pointer on its second item.
   let open_ := (d.step (.menu 700 250)).step
     (.motion 720 (Menu.itemY ⟨700, 250⟩ 1 + 5))
-  render c open_.view; c.savePng "menu.png"
+  render c open_.view; shot c "menu.png"
   let off := open_.step (.press 20 20)
   IO.println s!"a press off the menu: menu open {off.now.menu.isSome}, \
     {off.now.windows.length} windows, {off.past.length} earlier worlds"
   let undo := Event.key (.char 'z') ctrlShift
   let d := (d.step undo).step undo
   IO.println s!"after two undos: {d.now.windows.map (·.title)}"
-  render c d.view; c.savePng "after-undo.png"
-  render c sampler; c.savePng "sampler.png"
+  render c d.view; shot c "after-undo.png"
+  render c sampler; shot c "sampler.png"
   -- What the decoder makes of events as the shim hands them back.
   let raw (kind a b : Float) (text := "") : RawEvent := ⟨⟨#[kind, a, b, 0]⟩, text⟩
   let shown : Option Event → String
@@ -236,7 +244,7 @@ def test (c : Canvas) (svc : Services) : IO Unit := do
     | _ => none
   let d ← (Event.press 120 200 :: typing.filterMap toEvent).foldlM (stepNow svc) start
   IO.println s!"focused: {(d.now.windows.find? (·.id == d.now.focus)).map (·.title)}"
-  render c d.view; c.savePng "repl.png"
+  render c d.view; shot c "repl.png"
 
 def LeanMachine.Request.show : Request → String
   | .run tag _ => s!"run {tag}"
@@ -362,7 +370,7 @@ def testRuns (c : Canvas) (svc : Services) : IO Unit := do
       IO (Desktop × Runs) := do
     let (d, runs) ← feed d runs (enter line)
     IO.sleep 300
-    if let some file := png then render c d.view; c.savePng file
+    if let some file := png then render c d.view; shot c file
     let t0 ← IO.monoNanosNow
     let (d, runs) ← feed d runs [ctrlC]
     let (d, runs, seen) ← settle d runs
@@ -380,7 +388,7 @@ def testRuns (c : Canvas) (svc : Services) : IO Unit := do
   let mut runs := runs
   for line in ["Busy.polled 50000", "Busy.spin 400", "churn 100000000 0", "quiet 4000000 0"] do
     (d, runs) ← stopAt d runs line
-  render c d.view; c.savePng "repl-runs.png"
+  render c d.view; shot c "repl-runs.png"
   -- What the safepoints cost: the same loops compiled without them.
   IO.println "the safepoints' cost, each line waited for:"
   let raw := "set_option leanMachine.safepoints false in "
@@ -402,7 +410,7 @@ def testRuns (c : Canvas) (svc : Services) : IO Unit := do
                "stubborn", "IO.sleep 100000", "quietRaw 2000000 0",
                "set_option maxRecDepth 100000 in #reduce (List.range 30000).foldl (· + ·) 0"] do
     (d, runs) ← stopAt d runs line
-  render c d.view; c.savePng "repl-interrupt.png"
+  render c d.view; shot c "repl-interrupt.png"
   -- An app made here opens in a window by the REPL, and runs there: a
   -- press drops a dot.
   (d, runs) ← lines d runs
@@ -412,7 +420,7 @@ def testRuns (c : Canvas) (svc : Services) : IO Unit := do
   (d, runs) ← feed d runs [.press (123 + 60) (138 + 50), .press (123 + 120) (138 + 90)]
   IO.println s!"windows: {d.now.windows.map (·.title)}, focus on \
     {(d.now.windows.find? (·.id == d.now.focus)).map (·.title)}"
-  render c d.view; c.savePng "repl-launch.png"
+  render c d.view; shot c "repl-launch.png"
   -- Undo takes a definition back: the REPL's Lean is in its state. Dots
   -- covers the REPL's left side now; a press on its right focuses it.
   let toRepl := Event.press 600 250
@@ -423,7 +431,7 @@ def testRuns (c : Canvas) (svc : Services) : IO Unit := do
   (d, runs) ← feed d runs [.key (.char 'z') ctrlShift]
   IO.println "after undo:"
   (d, runs) ← lines d runs ["more", "answer"]
-  render c d.view; c.savePng "repl-undo.png"
+  render c d.view; shot c "repl-undo.png"
   -- Undo brings back a REPL waiting for a run whose outcome came to a
   -- world that's gone. Ctrl+C is answered at once.
   (d, runs) ← feed d runs (enter "Busy.alloc 1")
@@ -540,11 +548,11 @@ def testLean (c : Canvas) (svc : Services) : IO Unit := do
   let key (k : Key) : Event := .key k {}
   let d ← ([Event.press 120 200] ++
     entered.flatMap (fun l => [Event.text l, key .enter]) ++ [Event.text editing]).foldlM (stepNow svc) start
-  render c d.view; c.savePng "repl-highlight.png"
+  render c d.view; shot c "repl-highlight.png"
   let d ← [.key (.char 'c') { ctrl := true }, .text "Picture.", key .tab].foldlM (stepNow svc) d
-  render c d.view; c.savePng "repl-complete.png"
+  render c d.view; shot c "repl-complete.png"
   let d ← [.key (.char 'c') { ctrl := true }, .text "List.ma", key .tab].foldlM (stepNow svc) d
-  render c d.view; c.savePng "repl-complete-many.png"
+  render c d.view; shot c "repl-complete-many.png"
   -- What it costs. A keystroke: the REPL steps, and its Lean reads the
   -- line again.
   let env := r.env.getD env
@@ -624,10 +632,10 @@ def testEditor (c : Canvas) (svc : Services) : IO Unit := do
   let key (k : Key) : AppEvent := .key k {}
   let ctrl (ch : Char) : AppEvent := .key (.char ch) { ctrl := true }
   let ed (e : Editor) (evs : List AppEvent) : IO Editor := evs.foldlM (answerNow svc Editor.heard) e
-  let dir := projectRoot / ".lake" / "editor-test"
+  let dir := testOut / "editor"
   IO.FS.createDirAll dir
   IO.FS.writeFile (dir / "Scratch.lean") "def a := 1\ndef b := 2\ndef c := 3\n"
-  let path := ".lake/editor-test/Scratch.lean"
+  let path := ".lake/test/editor/Scratch.lean"
   let e ← ed {} [.tick ⟨10, 8, 30⟩]
   IO.println s!"the editor asks for its Lean ({e.env.isSome}) and the files: \
     {e.files.size} Lean files, {e.files.toList.take 4}…"
@@ -657,7 +665,7 @@ def testEditor (c : Canvas) (svc : Services) : IO Unit := do
   let d ← [Event.menu 300 100, item 300 100 2].foldlM (stepNow svc) start
   let title (d : Desktop) := (d.now.windows.find? (·.id == d.now.focus)).map (·.title)
   IO.println s!"from the menu: {title d}"
-  render c d.view; c.savePng "editor-files.png"
+  render c d.view; shot c "editor-files.png"
   let dkey (k : Key) : Event := .key k {}
   let d ← [Event.text "apps/cl", dkey .enter].foldlM (stepNow svc) d
   IO.println s!"\"apps/cl\", Enter: {title d}"
@@ -665,11 +673,11 @@ def testEditor (c : Canvas) (svc : Services) : IO Unit := do
   let d ← ((List.replicate 16 (dkey .down)) ++ [dkey .«end», dkey .enter, .text "toward.",
     dkey .backspace, .text " + TimeOfDay.", dkey .tab]).foldlM (stepNow svc) d
   IO.println s!"Tab after `TimeOfDay.`: {title d}"
-  render c d.view; c.savePng "editor-complete.png"
+  render c d.view; shot c "editor-complete.png"
   -- A comment opened at the top runs to the end of the file; the wheel
   -- scrolls down to show it.
   let d ← [Event.key .home { ctrl := true }, .text "/- ", .wheel 600 300 (-3)].foldlM (stepNow svc) d
-  render c d.view; c.savePng "editor-comment.png"
+  render c d.view; shot c "editor-comment.png"
   -- The editor alone again: a press places the cursor, the wheel scrolls.
   let e ← ed e [.text "apps/ed", key .enter]
   let e ← ed e [.press (Editor.textX + monoAdvance edFont * 6 + 2) (edPad + 5)]
@@ -832,14 +840,14 @@ def testReload (c : Canvas) (svc : Services) : IO Unit := do
   IO.println "  `NEW ` typed in the clock's digits, Ctrl+R:"
   let (d, runs) ← reloadOn d runs
   IO.println s!"    the clock says {clockSays d}; the editor: {(status d edWin).quote}"
-  render c d.view; c.savePng "reload-clock.png"
+  render c d.view; shot c "reload-clock.png"
   let (d, runs) ← feed d runs [.key (.char 'z') ctrlShift]
   IO.println s!"  undo: the clock says {clockSays d}; the editor: {(status d edWin).quote}"
   let (d, runs) ← feed d runs [.text "{oops} "]
   IO.println "  `{oops} ` typed after it, Ctrl+R:"
   let (d, runs) ← reloadOn d runs
   IO.println s!"    the clock says {clockSays d}; the editor: {(status d edWin).quote}"
-  render c d.view; c.savePng "reload-error.png"
+  render c d.view; shot c "reload-error.png"
   let (d, runs) ← feed d runs (List.replicate 7 (dkey .backspace))
   IO.println "  `{oops} ` deleted, Ctrl+R:"
   let (d, runs) ← reloadOn d runs
@@ -850,7 +858,7 @@ def testReload (c : Canvas) (svc : Services) : IO Unit := do
   IO.println s!"  Editor.lean, Ctrl+R:"
   let (d, runs) ← reloadOn d runs
   IO.println s!"    windows {windows d}; focus {d.now.focus}"
-  render c d.view; c.savePng "reload-editor.png"
+  render c d.view; shot c "reload-editor.png"
   -- Again from the first editor, which still shows a strip at its left:
   -- the new one is replaced, in place.
   let (d, runs) ← feed d runs [.press 507 300]
@@ -939,6 +947,7 @@ def main (args : List String) : IO Unit := do
   match args with
   | ["--test"] =>
     let _ ← IO.wait base
+    IO.FS.createDirAll testOut
     IO.println s!"the REPLs' Lean imported in {((← IO.monoNanosNow) - t0) / 1000000} ms, \
       RSS {← rssMB} MB"
     test c svc; testLean c svc; testEditor c svc; testReload c svc; testRuns c svc; testMasking
