@@ -17,20 +17,17 @@ runs, so that toolchain must stay installed.
 ### Ubuntu 26.04
 
 A fresh Ubuntu 26.04 desktop already has Cairo's library and the fonts
-the desktop draws with. This installs the rest, with curl and git to
-fetch elan and the code:
+the desktop draws with. This installs the rest, with curl and git:
 
 ```sh
 sudo apt install build-essential pkg-config libcairo2-dev libsdl3-0 curl git
 ```
 
-Then elan, Lean's toolchain manager. The first build installs the Lean
-that `lean-toolchain` names.
-
-```sh
-curl https://elan.lean-lang.org/elan-init.sh -sSf | sh
-source ~/.elan/env
-```
+Then install Lean by following
+[lean-lang.org's install page](https://lean-lang.org/install/). Lean
+Machine only needs elan, Lean's toolchain manager, from it: check that
+`lake --version` works in a new terminal. The first build fetches Lean
+4.36 itself, as `lean-toolchain` names it.
 
 Other systems haven't been tried yet.
 
