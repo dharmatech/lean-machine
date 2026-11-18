@@ -1098,7 +1098,8 @@ def testMaximize (c : Canvas) (svc : Services) : IO Unit := do
 -- undone; Ctrl+Shift+H until nothing is focused, then once more; a
 -- maximized clock minimized, ticked, reloaded and brought back
 -- maximized; a click on a button below a maximized window's edge, and on
--- the bar over a window under it; the hint giving way to more windows.
+-- the bar over a window under it; the hint giving way to more windows;
+-- the boxes on a title showing what they do, with the pointer on them.
 def testMinimize (c : Canvas) : IO Unit := do
   let start := steps start [.tick ⟨10, 8, 30⟩]
   let click (x y : Float) : List Event := [.press x y, .release x y]
@@ -1189,6 +1190,19 @@ def testMinimize (c : Canvas) : IO Unit := do
   let d := d.step (.motion (buttonX d "Notes") (barY + 10))
   IO.println s!"  REPL and the first Inspector minimized: focus on {focused d}"
   render c d.view; shot c "taskbar-many.png"
+  -- The pointer on the boxes of a title, which show what they do. The
+  -- REPL (80, 70) 566 × 331, behind: its boxes from x = 580 to its right
+  -- edge at 646, its title from y = 70 to 98.
+  let boxesAt (d : Desktop) (x y : Float) : String :=
+    let d := d.step (.motion x y)
+    ((d.now.boxesLit.bind fun id => d.now.windows.find? (·.id == id)).map (·.title)).getD "none"
+  IO.println s!"the boxes lit with the pointer on the REPL's minimize box: \
+    {boxesAt start 590 84}; on its title left of them: {boxesAt start 570 84}; on its top \
+    edge above them: {boxesAt start 630 71}; on its right edge: {boxesAt start 644 84}"
+  render c (start.step (.motion 610 84)).view; shot c "boxes.png"
+  let d := steps start (click 885 354)
+  IO.println s!"  Notes maximized, the pointer on its green box: {boxesAt d (screenW - 36) 14}"
+  render c (d.step (.motion (screenW - 36) 14)).view; shot c "boxes-max.png"
 
 def main (args : List String) : IO Unit := do
   let c ← Canvas.new screenW.toUInt32 screenH.toUInt32

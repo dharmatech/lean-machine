@@ -210,6 +210,10 @@ def Win.onMax (w : Win) (x y : Float) : Bool :=
 def Win.onMin (w : Win) (x y : Float) : Bool :=
   w.onTitle x y && x ≥ w.x + w.w - 66 && x < w.x + w.w - 46
 
+-- Any of the three boxes.
+def Win.onBoxes (w : Win) (x y : Float) : Bool :=
+  w.onTitle x y && x ≥ w.x + w.w - 66
+
 def Win.inBody (w : Win) (x y : Float) : Bool :=
   w.bodyX ≤ x && x < w.bodyX + w.bodyW && w.bodyY ≤ y && y < w.bodyY + w.bodyH
 

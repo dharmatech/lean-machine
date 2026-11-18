@@ -181,7 +181,10 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
 - `View.lean`: `Desktop.view` returns a `Picture`. Each app's view is
   moved to its window's body and cut to it, with the grip over its
   bottom right corner. The edges a drag resizes, or that a press where
-  the pointer is would grab, are lit (`World.lit`). Minimized windows
+  the pointer is would grab, are lit (`World.lit`). The boxes on a
+  title a press where the pointer is would hit (`World.boxesLit`) are
+  all in colour and show glyphs (`closeGlyph`, `minGlyph`, `maxGlyph`,
+  `restoreGlyph`). Minimized windows
   aren't drawn. The taskbar (`World.barView`) draws each window's
   button (`Win.button`: a dot and the title, underlined if focused, lit
   under the pointer, dim if minimized), then the hint and the count of

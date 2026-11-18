@@ -74,7 +74,11 @@ bar over Notes, dragged partly under it, does nothing and makes no
 step; dragged 300 further down, Notes stops with the top 20 pixels of
 its title above the bar. Last, Clock, Inspector, Notes and Clock are opened from the menu,
 one at a time, with each button's width and whether the hint has room:
-it gives way at six windows. Two are minimized (`taskbar-many.png`).
+it gives way at six windows. Two are minimized (`taskbar-many.png`). It says whose
+boxes show what they do with the pointer on the REPL's minimize box, on
+its title left of the boxes, on its top edge above them and on its right
+edge (only the first), and on a maximized Notes' green box (`boxes.png`,
+the REPL's behind Notes; `boxes-max.png`, the restore glyph).
 
 Between the REPL's highlighting and its runs, `--test` tries the
 editor. It prints the tokens of six lines of a file that leave a

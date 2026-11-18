@@ -10,12 +10,32 @@ namespace LeanMachine
 
 def litRgb : UInt32 := 0x7dcfff   -- an edge the pointer would grab, or is dragging
 
+-- What each box on a title does, drawn on it in the dark of a body, a
+-- box 14 pixels square centered at (cx, cy): × closes, − minimizes, a
+-- square maximizes, and two squares, one behind the other, restore.
+def closeGlyph (cx cy : Float) : Picture :=
+  .group [.line (cx - 3.5) (cy - 3.5) (cx + 3.5) (cy + 3.5) 1.5 0x1a1b26,
+          .line (cx - 3.5) (cy + 3.5) (cx + 3.5) (cy - 3.5) 1.5 0x1a1b26]
+def minGlyph (cx cy : Float) : Picture :=
+  .rect (cx - 4) (cy - 1) 8 2 0 0x1a1b26
+-- An outlined square, its corner at (x, y), `s` wide, inside a box of colour `rgb`.
+def squareGlyph (x y s : Float) (rgb : UInt32) : Picture :=
+  .group [.rect x y s s 0 0x1a1b26, .rect (x + 1.5) (y + 1.5) (s - 3) (s - 3) 0 rgb]
+def maxGlyph (cx cy : Float) : Picture := squareGlyph (cx - 4) (cy - 4) 8 0x9ece6a
+def restoreGlyph (cx cy : Float) : Picture :=
+  .group [squareGlyph (cx - 2) (cy - 4.5) 6.5 0x9ece6a,
+          .rect (cx - 4.5) (cy - 2) 6.5 6.5 0 0x9ece6a,
+          squareGlyph (cx - 4.5) (cy - 2) 6.5 0x9ece6a]
+
 -- A window, its edges `lit` lit. The grip in the body's bottom right
 -- corner, drawn over the app, says that the window can be resized. On the
 -- title, the close box; left of it the box that maximizes the window,
 -- with a hole in it while the window is maximized, to restore it; and
--- left of that the box that minimizes it.
-def Win.view (w : Win) (focused : Bool) (lit : Edges := {}) : Picture :=
+-- left of that the box that minimizes it. With the pointer on any of
+-- them (`boxes`), all three are in colour, focused or not, and each
+-- shows what it does.
+def Win.view (w : Win) (focused : Bool) (lit : Edges := {}) (boxes : Bool := false) :
+    Picture :=
   let titleRgb : UInt32 := if focused then 0xbb9af7 else 0x565f89
   let right := w.x + w.w
   let bottom := w.y + w.h
@@ -33,10 +53,14 @@ def Win.view (w : Win) (focused : Bool) (lit : Edges := {}) : Picture :=
     .rect w.x w.y w.w w.h 8 titleRgb,
     .rect w.bodyX w.bodyY w.bodyW w.bodyH 6 0x1a1b26,
     .text (w.x + 12) (w.y + 19) 14 0x1a1b26 w.title,
-    .rect (right - 22) (w.y + 7) 14 14 3 (if focused then 0xf7768e else 0x414868),
-    .rect (right - 42) (w.y + 7) 14 14 3 (if focused then 0x9ece6a else 0x414868),
-    .rect (right - 62) (w.y + 7) 14 14 3 (if focused then 0xe0af68 else 0x414868),
-    if w.maximized then .rect (right - 38) (w.y + 11) 6 6 1 titleRgb else .group [],
+    .rect (right - 22) (w.y + 7) 14 14 3 (if focused || boxes then 0xf7768e else 0x414868),
+    .rect (right - 42) (w.y + 7) 14 14 3 (if focused || boxes then 0x9ece6a else 0x414868),
+    .rect (right - 62) (w.y + 7) 14 14 3 (if focused || boxes then 0xe0af68 else 0x414868),
+    if boxes then
+      .group [closeGlyph (right - 15) (w.y + 14), minGlyph (right - 55) (w.y + 14),
+              if w.maximized then restoreGlyph (right - 35) (w.y + 14)
+              else maxGlyph (right - 35) (w.y + 14)]
+    else if w.maximized then .rect (right - 38) (w.y + 11) 6 6 1 titleRgb else .group [],
     -- The app draws in its own coordinates, cut to the body.
     .translate w.bodyX w.bodyY
       (.clip 0 0 w.bodyW w.bodyH (w.app.view w.bodyW w.bodyH))] ++
@@ -50,6 +74,14 @@ def World.lit (world : World) : Option (Nat × Edges) :=
   | none, none => (world.grabAt world.mouseX world.mouseY).bind fun (w, es) =>
     if es.any then some (w.id, es) else none
   | none, some _ => none
+
+-- The window whose title boxes show what they do: the one a press where
+-- the pointer is would hit a box of, with no drag and no menu.
+def World.boxesLit (world : World) : Option Nat :=
+  match world.drag, world.menu with
+  | none, none => (world.grabAt world.mouseX world.mouseY).bind fun (w, es) =>
+    if !es.any && w.onBoxes world.mouseX world.mouseY then some w.id else none
+  | _, _ => none
 
 -- The menu: a line that says what it does, then an item for each app in
 -- the catalog. The item under the pointer is lit.
@@ -98,11 +130,13 @@ def World.barView (world : World) (earlier : Nat) : Picture :=
 def Desktop.view (d : Desktop) : Picture :=
   let world := d.now
   let lit := world.lit
+  let boxes := world.boxesLit
   .group ([.rect 0 0 screenW screenH 0 0x24283b] ++
     world.visible.map (fun w => w.view (w.id == world.focus)
       (match lit with
        | some (id, es) => if id == w.id then es else {}
-       | none => {})) ++
+       | none => {})
+      (boxes == some w.id)) ++
     [world.barView d.past.length] ++
     world.menu.toList.map world.menuView)
 

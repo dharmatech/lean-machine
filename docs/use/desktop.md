@@ -5,7 +5,9 @@ one to open it in a new window where the menu was. Esc closes the menu,
 and so does a click off it. Drag a window by its title (not below the
 taskbar: the top of the title stays above it), click one to raise it,
 click the red box on a title to close it, Ctrl+Shift+Z to undo, Esc to
-quit. Clock is a clock.
+quit. Clock is a clock. With the pointer on the boxes of any title, each
+shows what it does: × closes, − minimizes, a square maximizes, and two
+squares restore a maximized window.
 
 To resize a window, drag one of its edges or corners, or the grip in
 its bottom right corner. An edge lights up when the pointer is close
