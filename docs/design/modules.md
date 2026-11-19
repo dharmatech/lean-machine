@@ -322,8 +322,8 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   them with `feed`, then the outcomes of runs that ended, stops the runs of windows
   that are gone, ticks with the time, gives a frame if one is due
   (`nextFrameAfter`), and draws. Also the tests for `--test` that
-  haven't moved to `Tests/` yet: `test`, `testReload`, `testRuns` and
-  `testMasking`; and `main`, which runs
+  haven't moved to `Tests/` yet: `test`, `testRuns` and `testMasking`;
+  and `main`, which runs
   them for `--test`, and `Boids.bench` (`Apps/Boids/Bench.lean`) for
   `--bench`.
 - `Tests/`: the tests `--test` runs, in `LeanMachine.Tests`, moving
@@ -365,6 +365,11 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
     line before left open, an editor alone on a scratch file, then on
     the desktop with Clock.lean, and what it costs
     ([The editor](editor/README.md)).
+  - `Reload.lean`: `testReload`: each app's file reloaded in the
+    desktop's Lean, files that can't be, an editor alone, then the
+    desktop with real runs: Clock, Editor and Boids reloaded from an
+    editor, an error, a stop, a new app (`helloSrc`), and what reloaded
+    code costs ([Reloading](reloading/README.md)).
 - `shim.c`: Cairo draws into an image in memory, and SDL3 shows it in
   one window and hands back events, text input included, the wheel,
   and a wake (an SDL user event). No GPU in the design.
