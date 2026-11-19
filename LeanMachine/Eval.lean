@@ -47,9 +47,10 @@ def projectRoot : System.FilePath := sourceRoot%
 -- them already. Boids' simulation is here (Flock imports the rest of
 -- it), compiled: a reloaded Boids.lean, which is interpreted, steps its
 -- flock as fast as the menu's Boids does. The simulation's files can't
--- be reloaded.
+-- be reloaded. So are the widgets, which a reloaded app can then use.
 def replImports : Array Name :=
-  #[`Init, `LeanMachine.Ambient, `LeanMachine.Text, `LeanMachine.Apps.Boids.Flock]
+  #[`Init, `LeanMachine.Ambient, `LeanMachine.Text, `LeanMachine.Slider,
+    `LeanMachine.Apps.Boids.Flock]
 
 /-! ## Safepoints in what the REPL compiles -/
 

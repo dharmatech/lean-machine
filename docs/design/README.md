@@ -12,6 +12,7 @@ dot notation, and no mutation? The name is a working title.
 ## Topics
 
 - [The world and apps](world/README.md)
+- [Widgets](widgets/README.md)
 - [Drawing and input](drawing/README.md)
 - [Runs, requests and threads](runs/README.md)
 - [Stopping](stopping/README.md)

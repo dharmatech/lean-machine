@@ -97,6 +97,16 @@ frame at 150 boids and, after Up 17 times and 60 more frames, at 1000
 (`boids-1000.png`): the step (the world hearing the frame), the
 desktop's view, and drawing it.
 
+Then a slider, from 1 to 80, in a window as a run in the REPL would
+open it. A press halfway along its track sets it to 40.5, and a motion
+three quarters along, 100 pixels below the track, to 60.25
+(`slider.png`, the knob held). A motion out of the window, past the
+track's end, stops it at 80, and after the release a motion changes
+nothing. One undo takes back the whole drag, which made one step. Last,
+the three lines of [A slider, made in the REPL](../explore/slider.md)
+are typed into a REPL, which opens the slider, and its knob is dragged
+near the end (`slider-repl.png`).
+
 Between the REPL's highlighting and its runs, `--test` tries the
 editor. It prints the tokens of six lines of a file that leave a
 comment, a nested comment, a string and a doc comment open for the next

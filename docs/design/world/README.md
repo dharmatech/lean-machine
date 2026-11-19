@@ -15,5 +15,6 @@
 - [A title from the state](title-from-state.md)
 - [An app says from its state whether it animates](frames.md)
 - [A pattern variable can be a constructor](pattern-variable-constructor.md)
+- [An app hears a drag](drags.md)
 
 [↑ Design](../README.md)

@@ -11,6 +11,18 @@ def pi : Float := 3.141592653589793
 -- monospace text and place a cursor without asking Cairo.
 def monoAdvance (size : Float) : Float := 0.6 * size
 
+-- A box: its top left corner, and its size. A window's place on the
+-- screen, or a widget's in a window's body.
+structure Rect where
+  x : Float
+  y : Float
+  w : Float
+  h : Float
+  deriving BEq, Inhabited, Repr
+
+def Rect.contains (r : Rect) (x y : Float) : Bool :=
+  r.x ≤ x && x < r.x + r.w && r.y ≤ y && y < r.y + r.h
+
 -- Where text sits across its box. Top to bottom it is always centered.
 inductive Align where
   | left | center | right

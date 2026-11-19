@@ -35,15 +35,6 @@ def dragSlop : Float := 4
 -- front of it, so that a press can still find the title.
 def titleKept : Float := 20
 
--- A window's place on the screen: its corner, and its size with the
--- title and frame.
-structure Rect where
-  x : Float
-  y : Float
-  w : Float
-  h : Float
-  deriving BEq, Inhabited, Repr
-
 -- The edges of a window a drag moves. A title moves all four, which
 -- moves the window; an edge moves one, and a corner two, which resizes it.
 structure Edges where
@@ -137,6 +128,8 @@ def Win.bodyY (w : Win) : Float := w.y + titleH
 def Win.bodyW (w : Win) : Float := w.w - 2 * frame
 def Win.bodyH (w : Win) : Float := w.h - titleH - frame
 
+-- Its place on the screen: its corner, and its size with the title and
+-- frame.
 def Win.rect (w : Win) : Rect := ⟨w.x, w.y, w.w, w.h⟩
 def Win.maximized (w : Win) : Bool := w.restore.isSome
 

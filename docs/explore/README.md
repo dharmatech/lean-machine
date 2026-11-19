@@ -7,6 +7,8 @@ self-contained, each ending with where you might go next.
   frames
 - [Change Boids while it flies](boids-live.md): an app reloaded from
   the editor, over code that stays compiled
+- [A slider, made in the REPL](slider.md): a widget, dragged with the
+  pointer, in an app's state
 
 [Use](../use/README.md) has plenty more to type.
 

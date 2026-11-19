@@ -3,7 +3,7 @@
 The Lean code is one module per file in `LeanMachine/`, in the
 `LeanMachine` namespace, with a thin `Main.lean` on top. An app can be
 a folder of modules: Boids' are in `Apps/Boids/`, in `LeanMachine.Boids`. `Picture`, `Key`,
-`App`, `Safepoint`, `Busy`, `Text`, the apps in `Apps/`, `World`,
+`App`, `Slider`, `Safepoint`, `Busy`, `Text`, the apps in `Apps/`, `World`,
 `Desktop` and `View` are pure and import only each other. `Ambient` is what code in a
 run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
 `Eval` call C (and `Safepoint`'s safepoints, pure C functions, and
@@ -18,7 +18,8 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   pure. Monospace text (`mono`) goes the other way: Lean decides that each
   character takes `monoAdvance size` (0.6 em), and the shim puts every
   glyph in its cell, so a view knows where each character is, and where a
-  cursor goes, without measuring.
+  cursor goes, without measuring. `Rect` is a box: a window's place on
+  the screen, or a widget's in a window's body.
 - `Key.lean`: `Key`, which key went down (a character key, in lower
   case, or Enter, the arrows, Home and the like), and `Mods`, the Ctrl,
   Shift and Alt held with it. `Key.show` writes one as "Ctrl+Shift+N".
@@ -57,6 +58,13 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   opens and whenever its size changes, or a frame (`frame`, with a
   monotonic clock's milliseconds), 60 a second while the app animates.
   `gripSize` is the corner of the body the desktop's grip covers.
+- `Slider.lean`: `Slider`, a widget: a value from `lo` to `hi`, picked
+  by dragging a knob along a track, evenly or on a cube
+  (`Slider.Scale`), and whether the knob is held. An app keeps it in
+  its state and gives it a box, the same to `heard`, the slider after
+  a press, motion or release, and to `view`
+  ([A slider is a value in a box the app gives it](widgets/slider.md)).
+  `#guard`s check dragging it as it builds.
 - `Safepoint.lean`: what compiled code calls where a stop may reach it.
   `poll x` is `x`, a safepoint in C. `safepoint` and `interruptNow` are
   the calls the REPL's Lean puts at the start of every function it
@@ -249,8 +257,9 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   apps), and `Event.launch`, and `keepFor`
   stops the runs of windows that are gone.
 - `Eval.lean`: Lean in the desktop. `startBase` imports the REPLs' Lean
-  (`replImports`: `Init`, `LeanMachine.Ambient`, `LeanMachine.Text` and
-  Boids' simulation, `LeanMachine.Apps.Boids.Flock`; not the apps) on a thread of its
+  (`replImports`: `Init`, `LeanMachine.Ambient`, `LeanMachine.Text`,
+  `LeanMachine.Slider` and Boids' simulation,
+  `LeanMachine.Apps.Boids.Flock`; not the apps) on a thread of its
   own as the desktop starts, and opens `LeanMachine`. `eval` takes a
   line, wraps it in `#eval` if it parses as a term, and elaborates it on
   the calling thread with `runCommands`, its own loop over Lean's
