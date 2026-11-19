@@ -1,9 +1,10 @@
 # What `--test` checks
 
 `--test` puts what it writes in `.lake/test/`, wherever it runs from;
-git ignores it, and it can be deleted at any time. Its code is moving
-from `Main.lean` to `Tests/`, with what the tests share in
-`Tests/Kit.lean` ([How it's built](modules.md)). It writes
+git ignores it, and it can be deleted at any time. Its code is in
+`Tests/`, a module for each test, with what they share in
+`Tests/Kit.lean`; `Tests.lean` runs them all, in the order below
+([How it's built](modules.md)). It writes
 `after-script.png`, `after-undo.png`, `menu.png` (the menu open) and
 `repl.png` (the REPL after a script of typing, editing and history),
 and `sampler.png`, one of each kind of picture. It also prints the REPL's line, history and first

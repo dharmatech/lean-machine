@@ -36,11 +36,11 @@ target runs pkg : FilePath := do
 lean_lib LeanMachine where
   globs := #[.submodules `LeanMachine]
 
-/-- The tests `--test` runs, under Tests/, which Main.lean imports: a
-library apart from `LeanMachine`, since nothing in it should import
-them. -/
+/-- The tests `--test` runs: Tests.lean, which runs them all, and the
+modules under Tests/. Main.lean imports it: a library apart from
+`LeanMachine`, since nothing in it should import them. -/
 lean_lib Tests where
-  globs := #[.submodules `Tests]
+  globs := #[.andSubmodules `Tests]
 
 @[default_target]
 lean_exe desktop where

@@ -321,14 +321,13 @@ the masking test's hooks into runs.cpp, `Tests/Masking.lean`), only
   the next frame (a run that ends wakes it), applies
   them with `feed`, then the outcomes of runs that ended, stops the runs of windows
   that are gone, ticks with the time, gives a frame if one is due
-  (`nextFrameAfter`), and draws. Also the tests for `--test` that
-  haven't moved to `Tests/` yet: `test`, with `sampler`; and `main`,
-  which runs
-  them for `--test`, and `Boids.bench` (`Apps/Boids/Bench.lean`) for
-  `--bench`.
-- `Tests/`: the tests `--test` runs, in `LeanMachine.Tests`, moving
-  here from `Main.lean` one at a time. Nothing in `LeanMachine/`
-  imports them.
+  (`nextFrameAfter`), and draws. Also `main`, which runs the loop, or
+  `Tests.all` for `--test`, or `Boids.bench` (`Apps/Boids/Bench.lean`)
+  for `--bench`.
+- `Tests.lean`: `Tests.all`, which runs the test in each module of
+  `Tests/`, in turn, for `--test`.
+- `Tests/`: the tests `--test` runs, in `LeanMachine.Tests`. Nothing in
+  `LeanMachine/` imports them.
   - `Show.lean`: how the tests print what they find: `Outcome.show`,
     `Event.showDone` and the like for what came back from runs, tokens
     and the editor's lines (`showTokens`, `showLexed`), and windows'
@@ -341,6 +340,10 @@ the masking test's hooks into runs.cpp, `Tests/Masking.lean`), only
     Then what pictures and windows show (`Picture.texts`, `says`,
     `rectOf`), `dragBy`, `undoKey`, `shot` (a picture of the canvas in
     `.lake/test/`), `usPer` and `rssMB`.
+  - `Desktop.lean`: `test`: the pure world driven by a script of
+    events, the menu, Notes typed into and undo; `sampler`, one of each
+    kind of picture; what the decoder makes of events; and the REPL
+    typed into and edited, alone and on the desktop.
   - `Frames.lean`: `testFrames`: a spinner, an app that animates,
     opened, minimized, undone, and made in a REPL.
   - `Boids.lean`: `testBoids`: Boids from the menu, its rules' sliders,
