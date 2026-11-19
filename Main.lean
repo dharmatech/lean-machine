@@ -5,15 +5,19 @@ import LeanMachine.Eval
 import LeanMachine.View
 import LeanMachine.Slider
 import LeanMachine.Apps.Boids.Bench
+import Tests.Show
+import Tests.Kit
+import Tests.Frames
 
 -- A desktop as a value. `World.step` and `Desktop.view` are pure (in
 -- LeanMachine/); the loop here does the I/O, with `feed`
 -- (LeanMachine/Loop.lean) stepping the desktop and handing what apps ask
 -- to `Runs` (LeanMachine/Runs.lean), `eval` (LeanMachine/Eval.lean)
 -- evaluating Lean, and `render` (LeanMachine/Host.lean) the only code
--- that draws.
+-- that draws. The tests for `--test` are moving to Tests/, with what
+-- they share (Tests/Kit.lean); the rest are still below.
 
-open LeanMachine
+open LeanMachine LeanMachine.Tests
 
 /-! ## The loop: the I/O -/
 
@@ -107,52 +111,6 @@ def sampler : Picture :=
     .mono 40 540 24 0x9ece6a "iiiii MMMMM 01234",
     cells 40 548 24 17 ]
 
--- Waits for every run to end, up to `ms`, and tells the desktop how each
--- did; also returns the outcomes, oldest first.
-partial def settle (svc : Services) (d : Desktop) (runs : Runs) (ms : Nat := 30000)
-    (seen : List Event := []) : IO (Desktop × Runs × List Event) := do
-  let (runs, ended) ← runs.collect
-  let (d, runs) ← feed svc d runs ended
-  let seen := seen ++ ended
-  if runs.live.isEmpty || ms == 0 then return (d, runs, seen)
-  IO.sleep 1
-  settle svc d runs (ms - 1) seen
-
--- An app's state after `e`, with what it asks for worked out at once, on
--- this thread, outside any run.
-def answerNow {σ : Type} (svc : Services) (step : σ → AppEvent → Option (σ × List Request))
-    (r : σ) (e : AppEvent) : IO σ := do
-  match step r e with
-  | none => return r
-  | some (r, asks) => asks.foldlM (init := r) fun r a => do
-    let answer : AppEvent ← match a with
-      | .run tag work => pure (.done tag (.value (work ())) 0)
-      | .eval tag src env => do
-        pure (.done tag (← svc.eval src env (← IO.CancelToken.new)) 0)
-      | .stop tag => pure (.done tag (.stopped [] false) 0)
-      | .read tag _ | .write tag _ _ | .list tag _ => do
-        pure (.done tag (← (fileOutcome svc.root a).getD (pure (.failed "?"))) 0)
-      -- The apps it made go nowhere: there's no world here.
-      | .reload tag path src => do
-        pure (.done tag (← svc.reload path src (← IO.CancelToken.new)).1 0)
-    return ((step r answer).map (·.1)).getD r
-
-def hearNow (svc : Services) : Repl → AppEvent → IO Repl := answerNow svc Repl.step
-
--- The desktop after `e`, with the runs its apps ask for ended.
-def stepNow (svc : Services) (d : Desktop) (e : Event) : IO Desktop := do
-  let (d, runs) ← feed svc d {} [e]
-  let (d, _, _) ← settle svc d runs
-  return d
-
--- Where `--test` puts what it makes, the pictures and the editor's
--- scratch file, wherever it runs from. It's under .lake, which git
--- ignores, and can be deleted at any time.
-def testOut : System.FilePath := projectRoot / ".lake" / "test"
-
--- The canvas as a picture in `testOut`.
-def shot (c : Canvas) (name : String) : IO Unit := c.savePng (testOut / name).toString
-
 -- The pure world, driven by a script of events instead of a person.
 def test (c : Canvas) (svc : Services) : IO Unit := do
   let grab := Event.press 300 (160 + 10)          -- Clock's title
@@ -244,39 +202,6 @@ def test (c : Canvas) (svc : Services) : IO Unit := do
   IO.println s!"focused: {(d.now.windows.find? (·.id == d.now.focus)).map (·.title)}"
   render c d.view; shot c "repl.png"
 
-def LeanMachine.Request.show : Request → String
-  | .run tag _ => s!"run {tag}"
-  | .eval tag src _ => s!"eval {tag} {src.quote}"
-  | .stop tag => s!"stop {tag}"
-  | .read tag path => s!"read {tag} {path}"
-  | .write tag path _ => s!"write {tag} {path}"
-  | .list tag dir => s!"list {tag} {dir}"
-  | .reload tag path _ => s!"reload {tag} {path}"
-
-def LeanMachine.Said.show : Said → String
-  | .info s => s
-  | .warning s => s!"warning: {s}"
-  | .error s => s!"error: {s}"
-
-def LeanMachine.Outcome.show : Outcome → String
-  | .value s => s!"value {s}"
-  | .evaluated said _ => s!"said {said.map Said.show}"
-  | .stopped said cleanly =>
-    s!"stopped{if cleanly then " cleanly" else ""}\
-      {if said.isEmpty then "" else s!", said {said.map Said.show}"}"
-  | .failed why => s!"failed: {why}"
-  | .read s => s!"read {s.length} characters"
-  | .wrote => "wrote"
-  | .listed paths => s!"listed {paths.length} files"
-  | .reloaded said _ apps =>
-    s!"reloaded {apps}, said {said.map fun (r : Remark) => s!"{r.line + 1}:{r.col + 1} {r.said.show}"}"
-
-def LeanMachine.Event.showDone : Event → String
-  | .done win tag o ms => s!"window {win} run {tag}: {o.show}, {ms} ms"
-  | .launch win app => s!"window {win} opened {app.title}"
-  | .reload win apps => s!"window {win} reloaded {apps.map (·.1)}"
-  | _ => "another event"
-
 @[extern "sv_set_masking"] opaque setMasking (on : UInt8) : IO Unit
 -- Is the ref emptied by `Ref.take`, and not put back? Reading it would
 -- wait for ever.
@@ -326,12 +251,6 @@ def testMasking : IO Unit := do
       left the ref taken {taken} times ({msR} ms a stop); a lock held while cut off \
       left the mutex locked {locked} times ({msM} ms)"
   setMasking 1
-
-def rssMB : IO Nat := do
-  let s ← IO.FS.readFile "/proc/self/status"
-  let line := ((s.splitOn "\n").find? (·.startsWith "VmRSS:")).getD ""
-  let kb := ((line.drop 6).trimAscii.toString.takeWhile Char.isDigit).toNat!
-  return kb / 1024
 
 -- Runs on real threads, driven by a script: the desktop's REPL evaluates
 -- Lean, Ctrl+C stops it, and the outcomes come back to it.
@@ -492,30 +411,6 @@ def testRuns (c : Canvas) (svc : Services) : IO Unit := do
     d := d'; runs := runs'
   IO.println s!"RSS: {rss1} MB after the runs above, {← rssMB} MB after 50 more stopped"
 
-def LeanMachine.TokenKind.show : TokenKind → String
-  | .keyword => "keyword" | .symbol => "symbol" | .constant => "constant"
-  | .ident => "ident" | .number => "number" | .string => "string"
-  | .comment => "comment" | .error => "error"
-
--- `s` cut into its tokens, each with its kind: `def:keyword`.
-def showTokens (s : String) (ts : Array Token) : String :=
-  " ".intercalate (ts.toList.map fun t =>
-    s!"{String.ofList ((s.toList.drop t.start).take (t.stop - t.start))}:{t.kind.show}")
-
--- How many `mono`s a picture draws: a row of a REPL is one per run.
-partial def LeanMachine.Picture.monos : Picture → Nat
-  | .mono .. => 1
-  | .group ps => ps.foldl (· + ·.monos) 0
-  | .translate _ _ p | .clip _ _ _ _ p => p.monos
-  | _ => 0
-
--- Microseconds a call of `act`, over `n` calls. `act` gets the call's
--- number, so that the work in it can't be done once for all.
-def usPer (n : Nat) (act : Nat → IO Unit) : IO Float := do
-  let t0 ← IO.monoNanosNow
-  for i in [0:n] do act i
-  return ((← IO.monoNanosNow) - t0).toFloat / n.toFloat / 1000
-
 -- Highlighting and completion: the tokens the REPL's Lean reads in a
 -- line, what Tab makes of names with one completion and with several,
 -- and what each costs.
@@ -597,21 +492,6 @@ def testLean (c : Canvas) (svc : Services) : IO Unit := do
       render c (repl.view (554 + (i % 2).toFloat) 269)
     IO.println s!"  a REPL window {name}: {pic.monos} monos; the view in {viewUs} µs, \
       the view drawn in {us} µs"
-
-def LeanMachine.Carry.show : Carry → String
-  | .code => "code" | .comment d => s!"comment {d}" | .string => "string"
-
--- A line of the editor's file, in short: where it starts, its tokens'
--- kinds, and where the next starts.
-def showLexed (l : Lexed) : String :=
-  let kinds := l.tokens.toList.map (·.kind.show)
-  let kinds := kinds.foldr (init := []) fun k ks => if ks.head? == some k then ks else k :: ks
-  s!"{l.text.quote}: [{l.carryIn.show}] {" ".intercalate kinds} [→ {l.carry.show}]"
-
-def showFile (e : Editor) : IO Unit := do
-  let b := e.buffer
-  for l in b.above.reverse ++ b.current :: b.below do
-    IO.println s!"    {showLexed l}"
 
 -- The editor: lines read with what the line before left open, an editor
 -- alone on a scratch file (opening, comments across lines, Enter, joins,
@@ -718,20 +598,6 @@ def testEditor (c : Canvas) (svc : Services) : IO Unit := do
   let frameUs ← usPer 50 fun _ => render c d.view
   IO.println s!"  an editor full of code: {pic.monos} monos; the view in {viewUs} µs, drawn in \
     {drawUs} µs; the desktop with it drawn in {frameUs} µs"
-
--- The texts a picture shows, in order.
-partial def LeanMachine.Picture.texts : Picture → List String
-  | .text _ _ _ _ s | .textIn _ _ _ _ _ _ _ s | .mono _ _ _ _ s => [s]
-  | .group ps => ps.flatMap (·.texts)
-  | .translate _ _ p | .clip _ _ _ _ p => p.texts
-  | _ => []
-
--- An app after `e`, with what it asks for worked out at once, on this
--- thread. The apps a reload makes go nowhere: there's no world here.
-def appNow (svc : Services) (a : App) (e : AppEvent) : IO App :=
-  answerNow svc (fun (a : App) e => a.step e) a e
-
-def LeanMachine.Win.texts (w : Win) : List String := (w.app.view w.bodyW w.bodyH).texts
 
 -- A small app in a file of its own, which the menu doesn't have.
 def helloSrc : String := "import LeanMachine.App
@@ -990,36 +856,11 @@ def testReload (c : Canvas) (svc : Services) : IO Unit := do
     IO.println s!"{n} reloads of {file} from the editor, kept for undo: {each} ms each; RSS \
       {rss0} → {← rssMB} MB; windows {windows d}"
 
--- The edges named, as "left+bottom".
-def LeanMachine.Edges.show (e : Edges) : String :=
-  let names := [(e.left, "left"), (e.top, "top"), (e.right, "right"), (e.bottom, "bottom")]
-  match names.filterMap fun (on, n) => if on then some n else none with
-  | [] => "none"
-  | ns => "+".intercalate ns
-
 -- Resizing windows: by an edge, a corner and the grip, down to the
 -- smallest size and up to the desktop's edges, with what the apps hear,
 -- what's lit, and undo; an editor alone told sizes, its cursor kept in
 -- view; an editor on the desktop made shorter, and undone; a reload that
 -- keeps the size of the window it replaces the app in.
-/-! ### Windows' places, for `testResize` and `testMaximize` -/
-
--- A whole number of pixels.
-def showNum (f : Float) : String := if f < 0 then s!"-{(-f).toUInt32}" else toString f.toUInt32
-def showRect (r : Rect) : String := s!"({showNum r.x}, {showNum r.y}) {showNum r.w} × {showNum r.h}"
-def winTitled (d : Desktop) (title : String) : Option Win := d.now.windows.find? (·.title == title)
-def rectOf (d : Desktop) (title : String) : String :=
-  ((winTitled d title).map (showRect ·.rect)).getD "no such window"
--- What a window shows on a line that starts with `s`.
-def says (d : Desktop) (title s : String) : String :=
-  ((((winTitled d title).map (·.texts)).getD []).find? (·.startsWith s)).getD "?"
--- A press at (x, y), the pointer moved (dx, dy) in two motions, and a release.
-def dragBy (x y dx dy : Float) : List Event :=
-  [.press x y, .motion (x + dx / 2) (y + dy / 2), .motion (x + dx) (y + dy),
-   .release (x + dx) (y + dy)]
-def steps (d : Desktop) (es : List Event) : Desktop := es.foldl Desktop.step d
-def undoKey : Event := .key (.char 'z') ctrlShift
-
 def testResize (c : Canvas) (svc : Services) : IO Unit := do
   let n := showNum
   let drag := dragBy
@@ -1257,54 +1098,6 @@ def testMinimize (c : Canvas) : IO Unit := do
   let d := steps start (click 885 354)
   IO.println s!"  Notes maximized, the pointer on its green box: {boxesAt d (screenW - 36) 14}"
   render c (d.step (.motion (screenW - 36) 14)).view; shot c "boxes-max.png"
-
-/-! ### Frames, for `testFrames` -/
-
--- A hand that the frames it hears turn, once every π seconds, with the
--- last frame's time in its title.
-def spinner : App :=
-  App.asking "Spin" (0 : Nat) (fun _ e => match e with | .frame ms => some (ms, []) | _ => none)
-    (fun ms w h =>
-      let a := ms.toFloat / 500
-      .line (w / 2) (h / 2) (w / 2 + 80 * a.cos) (h / 2 + 80 * a.sin) 4 0xf7768e)
-    (titleOf := fun ms => s!"Spin {ms}") (animating := fun _ => true)
-
--- A spinner made in the REPL, as docs/explore/spinner.md types it.
-def spinnerLines : List String :=
-  ["def hand (ms : Nat) (w h : Float) : Picture := let a := ms.toFloat / 500; \
-      .line (w / 2) (h / 2) (w / 2 + 80 * a.cos) (h / 2 + 80 * a.sin) 4 0xf7768e",
-   "def hear : Nat → AppEvent → Option Nat | _, .frame ms => some ms | _, _ => none",
-   "launch (App.of \"Spin\" 0 hear hand (animating := fun _ => true))"]
-
-def testFrames (c : Canvas) (svc : Services) : IO Unit := do
-  IO.println "frames:"
-  let start := steps start [.tick ⟨10, 8, 30⟩]
-  let spin (d : Desktop) : String :=
-    ((d.now.windows.find? (·.title.startsWith "Spin")).map (·.title)).getD "none"
-  let focused (d : Desktop) : String :=
-    ((d.now.windows.find? (·.id == d.now.focus)).map (·.title)).getD "none"
-  IO.println s!"  the start desktop animates: {start.now.animating}"
-  -- A spinner, as a run in the REPL (window 1) would open it.
-  let d := steps start [.launch 1 spinner, .frame 1000, .frame 1017]
-  IO.println s!"  a spinner opened, focus on {focused d}: animates {d.now.animating}; \
-    after frames at 1000 and 1017 ms: {spin d}; earlier worlds {d.past.length}, as before \
-    {start.past.length}"
-  render c d.view; shot c "frames.png"
-  -- Minimized, it hears no frames, and the desktop doesn't animate.
-  let dm := steps d [.key (.char 'h') ctrlShift, .frame 2000]
-  IO.println s!"  minimized: animates {dm.now.animating}; after a frame at 2000 ms: {spin dm}"
-  let db := steps dm [undoKey, .frame 3000]
-  IO.println s!"  undone: animates {db.now.animating}; after a frame at 3000 ms: {spin db}"
-  -- Made in the REPL: compiled there, and turned by the same frames.
-  let mut d := start
-  let mut seen := []
-  for line in spinnerLines do
-    let (d', runs) ← feed svc d {} [.press 120 200, .text line, .key .enter {}]
-    let (d', _, ended) ← settle svc d' runs
-    d := d'; seen := seen ++ ended
-  IO.println s!"  a spinner made in the REPL: {seen.map (·.showDone)}; windows \
-    {d.now.windows.map (·.title)}; animates {d.now.animating}"
-  render c (steps d [.frame 700]).view; shot c "frames-repl.png"
 
 /-! ### Boids, for `testBoids` -/
 

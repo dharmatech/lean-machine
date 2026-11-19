@@ -1,14 +1,15 @@
 # How it's built
 
 The Lean code is one module per file in `LeanMachine/`, in the
-`LeanMachine` namespace, with a thin `Main.lean` on top. An app can be
+`LeanMachine` namespace, with a thin `Main.lean` on top, and the tests
+for `--test` in `Tests/`, a library of their own. An app can be
 a folder of modules: Boids' are in `Apps/Boids/`, in `LeanMachine.Boids`. `Picture`, `Key`,
 `App`, `Slider`, `Safepoint`, `Busy`, `Text`, the apps in `Apps/`, `World`,
 `Desktop` and `View` are pure and import only each other. `Ambient` is what code in a
 run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
 `Eval` call C (and `Safepoint`'s safepoints, pure C functions, and
 `Main.lean`'s helpers for `--test`), only
-`Eval` imports Lean, and only they, `Loop`, Boids' `Bench` and `Main.lean` touch `IO` (and
+`Eval` imports Lean, and only they, `Loop`, Boids' `Bench`, `Main.lean` and the tests touch `IO` (and
 `Safepoint`'s `interrupted`, the error a stop becomes).
 
 - `Picture.lean`: `Picture`, plain data: rectangles, circles, rings,
@@ -320,11 +321,29 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   the next frame (a run that ends wakes it), applies
   them with `feed`, then the outcomes of runs that ended, stops the runs of windows
   that are gone, ticks with the time, gives a frame if one is due
-  (`nextFrameAfter`), and draws. Also `test`,
-  `testResize`, `testMaximize`, `testFrames`, `testBoids`, `testLean`, `testEditor`, `testReload`, `testRuns` and `testMasking` for `--test`
-  (`answerNow` steps an app's state and answers what it asks at once),
-  and `main`, which runs `Boids.bench` (`Apps/Boids/Bench.lean`) for
+  (`nextFrameAfter`), and draws. Also the tests for `--test` that
+  haven't moved to `Tests/` yet: `test`, `testResize`, `testMaximize`,
+  `testMinimize`, `testBoids`, `testSlider`, `testLean`, `testEditor`,
+  `testReload`, `testRuns` and `testMasking`; and `main`, which runs
+  them for `--test`, and `Boids.bench` (`Apps/Boids/Bench.lean`) for
   `--bench`.
+- `Tests/`: the tests `--test` runs, in `LeanMachine.Tests`, moving
+  here from `Main.lean` one at a time. Nothing in `LeanMachine/`
+  imports them.
+  - `Show.lean`: how the tests print what they find: `Outcome.show`,
+    `Event.showDone` and the like for what came back from runs, tokens
+    and the editor's lines (`showTokens`, `showLexed`), and windows'
+    edges and places (`Edges.show`, `showRect`).
+  - `Kit.lean`: what the tests share. `settle` waits for every run to
+    end and tells the desktop how each did; `stepNow` steps the desktop
+    and settles; `answerNow` steps an app's state and answers what it
+    asks at once, on the test's thread (`hearNow` for a REPL, `appNow`
+    for any app); `steps` steps the desktop with nothing done for it.
+    Then what pictures and windows show (`Picture.texts`, `says`,
+    `rectOf`), `dragBy`, `undoKey`, `shot` (a picture of the canvas in
+    `.lake/test/`), `usPer` and `rssMB`.
+  - `Frames.lean`: `testFrames`: a spinner, an app that animates,
+    opened, minimized, undone, and made in a REPL.
 - `shim.c`: Cairo draws into an image in memory, and SDL3 shows it in
   one window and hands back events, text input included, the wheel,
   and a wake (an SDL user event). No GPU in the design.
@@ -342,7 +361,7 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   what the thread holds, and no run is cut off while it holds any. A
   wrapped `IO.sleep` ends when its run is asked to stop. The guard also
   keeps the run's ambient in a thread-local, for `sv_ambient`.
-- `lakefile.lean` builds the `LeanMachine` library and `Main.lean`,
+- `lakefile.lean` builds the `LeanMachine` and `Tests` libraries and `Main.lean`,
   compiles `shim.c` with `cc` and `runs.cpp` with `c++`, and links them
   into `desktop` with Lean's interpreter (`supportInterpreter`) and a
   `-Wl,--wrap=` for each runtime function runs.cpp wraps.
