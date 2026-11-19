@@ -17,15 +17,12 @@ namespace LeanMachine.Tests
 -- the boxes on a title showing what they do, with the pointer on them.
 def testMinimize (c : Canvas) : IO Unit := do
   let start := steps start [.tick ⟨10, 8, 30⟩]
-  let click (x y : Float) : List Event := [.press x y, .release x y]
   -- The middle of the button of the window titled `title`.
   let buttonX (d : Desktop) (title : String) : Float :=
     let bar := d.now.taskbar
     ((bar.buttons.find? (·.1.title == title)).map fun (_, x) => x + bar.w / 2).getD 0
   let button (d : Desktop) (title : String) : List Event :=
     click (buttonX d title) (barY + barH / 2)
-  let focused (d : Desktop) : String :=
-    ((d.now.windows.find? (·.id == d.now.focus)).map (·.title)).getD "nothing"
   let front (d : Desktop) : String := ((d.now.visible.getLast?.map (·.title))).getD "nothing"
   let state (d : Desktop) (title : String) : String :=
     match winTitled d title with
@@ -36,8 +33,6 @@ def testMinimize (c : Canvas) : IO Unit := do
     let b := d.now.taskbar
     s!"{d.now.windows.length} windows, buttons {showNum b.w} wide, the hint \
       {if b.hint then "shown" else "gone"}"
-  let hkey : Event := .key (.char 'h') ctrlShift
-  let mkey : Event := .key (.char 'm') ctrlShift
   IO.println s!"the taskbar: {bar start}, at \
     {start.now.taskbar.buttons.map fun (w, x) => s!"{w.title} {showNum x}"}; focus on {focused start}"
   -- Notes (500, 340) 420 × 260: its minimize box is at (862, 354).
@@ -53,17 +48,17 @@ def testMinimize (c : Canvas) : IO Unit := do
   IO.println s!"  its button again: {state d "Notes"}; focus on {focused d}"
   let u := d.step undoKey
   IO.println s!"  undo: {state u "Notes"}; focus on {focused u}"
-  let d := steps d [hkey]
+  let d := steps d [minimizeKey]
   IO.println s!"  Ctrl+Shift+H: Inspector {state d "Inspector"}; focus on {focused d}"
-  let d := steps d [hkey, hkey]
+  let d := steps d [minimizeKey, minimizeKey]
   IO.println s!"  twice more: focus on {focused d}; {d.now.visible.length} windows showing; \
     {d.past.length} earlier worlds"
-  let d := steps d [hkey]
+  let d := steps d [minimizeKey]
   IO.println s!"  once more, nothing focused: {d.past.length} earlier worlds"
   let d := steps d (button d "Inspector")
   IO.println s!"  Inspector's button: {state d "Inspector"}; focus on {focused d}"
   -- Clock (220, 160): maximized, minimized and ticked while minimized.
-  let d := steps start (click 300 170 ++ [mkey, hkey, .tick ⟨10, 9, 0⟩])
+  let d := steps start (click 300 170 ++ [maximizeKey, minimizeKey, .tick ⟨10, 9, 0⟩])
   IO.println s!"Clock maximized, Ctrl+Shift+H, a tick at 10:09:00: {state d "Clock"}; \
     focus on {focused d}"
   let d := steps d (button d "Clock")
@@ -77,7 +72,7 @@ def testMinimize (c : Canvas) : IO Unit := do
   -- Inspector maximized: its bottom edge, which can be grabbed from 4
   -- below it, is at the top of the bar. The pointer 2 below it, on
   -- Clock's button.
-  let d := steps start (click 500 260 ++ [mkey])
+  let d := steps start (click 500 260 ++ [maximizeKey])
   let d := steps d [.motion (buttonX d "Clock") (barY + 2)]
   IO.println s!"Inspector maximized, the pointer 2 into the bar on Clock's button: lit \
     {(d.now.lit.map fun (id, es) => s!"window {id}, {es.show}").getD "nothing"}"
@@ -93,12 +88,11 @@ def testMinimize (c : Canvas) : IO Unit := do
   IO.println s!"  Notes dragged 300 further down: {state d "Notes"}, its title's top \
     {showNum titleKept} above the bar"
   -- More windows, from the menu: Clock, Inspector, Notes, Clock.
-  let item (x y : Float) (i : Nat) : Event := .press (x + 20) (Menu.itemY ⟨x, y⟩ i + itemH / 2)
   let mut more := start
   for (i, k) in [(0 : Nat), 3, 4, 0].zipIdx do
     let x := 640 + 30 * k.toFloat
     let y := 60 + 30 * k.toFloat
-    more := steps more [.menu x y, item x y i]
+    more := steps more [.menu x y, menuItem x y i]
     IO.println s!"  {bar more}"
   let d := more
   let d := steps d (button d "REPL" ++ button d "REPL" ++ button d "Inspector" ++ button d "Inspector")

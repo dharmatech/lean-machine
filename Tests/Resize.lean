@@ -15,7 +15,6 @@ namespace LeanMachine.Tests
 def testResize (c : Canvas) (svc : Services) : IO Unit := do
   let n := showNum
   let drag := dragBy
-  let win := winTitled
   let undo := undoKey
   let d := steps start [.tick ⟨10, 8, 30⟩]
   IO.println s!"resizing; the windows at the start: \
@@ -44,7 +43,7 @@ def testResize (c : Canvas) (svc : Services) : IO Unit := do
   IO.println s!"  undo: Clock {rectOf u "Clock"}; again: REPL {rectOf (u.step undo) "REPL"}"
   -- The editor alone, told its size.
   let key (k : Key) : AppEvent := .key k {}
-  let ed (e : Editor) (evs : List AppEvent) : IO Editor := evs.foldlM (answerNow svc Editor.heard) e
+  let ed := editorNow svc
   let e ← ed {} ([.tick ⟨10, 8, 30⟩, .resize 760 520, .text "apps/ed", key .enter] ++
     List.replicate 39 (key .down))
   IO.println s!"an editor alone on {e.title}, 760 × 520: {e.rows} rows, {e.cols} columns; \
@@ -61,14 +60,12 @@ def testResize (c : Canvas) (svc : Services) : IO Unit := do
     {e.rows} rows, {e.cols} columns; top line {e.top + 1}, first column {e.left + 1}"
   -- The editor on the desktop, on Clock.lean, its cursor on line 31, made
   -- 300 shorter by its bottom edge.
-  let item (x y : Float) (i : Nat) : Event := .press (x + 20) (Menu.itemY ⟨x, y⟩ i + itemH / 2)
   let dkey (k : Key) : Event := .key k {}
-  let d ← ([Event.menu 300 100, item 300 100 2, .text "apps/cl", dkey .enter] ++
+  let d ← ([Event.menu 300 100, menuItem 300 100 2, .text "apps/cl", dkey .enter] ++
     List.replicate 30 (dkey .down)).foldlM (stepNow svc) start
   -- The line numbers in view, first and last.
   let numbers (d : Desktop) : String :=
-    let ns := (((win d "Clock.lean").map (·.texts)).getD []).filter fun s =>
-      s.length == gutterCols - 1 && !s.trimAscii.isEmpty && s.trimAscii.toString.all Char.isDigit
+    let ns := lineNumbers d "Clock.lean"
     s!"lines {(ns.head?.map (·.trimAscii.toString)).getD "?"} to \
       {(ns.getLast?.map (·.trimAscii.toString)).getD "?"} in view"
   IO.println s!"an editor on the desktop, on Clock.lean: {rectOf d "Clock.lean"}, {numbers d}"

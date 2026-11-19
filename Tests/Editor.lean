@@ -24,7 +24,7 @@ def testEditor (c : Canvas) (svc : Services) : IO Unit := do
   -- The editor alone, its requests answered at once.
   let key (k : Key) : AppEvent := .key k {}
   let ctrl (ch : Char) : AppEvent := .key (.char ch) { ctrl := true }
-  let ed (e : Editor) (evs : List AppEvent) : IO Editor := evs.foldlM (answerNow svc Editor.heard) e
+  let ed := editorNow svc
   let dir := testOut / "editor"
   IO.FS.createDirAll dir
   IO.FS.writeFile (dir / "Scratch.lean") "def a := 1\ndef b := 2\ndef c := 3\n"
@@ -54,8 +54,7 @@ def testEditor (c : Canvas) (svc : Services) : IO Unit := do
   let e ← ed e [ctrl 'o']
   IO.println s!"  Ctrl+O again: {e.title}, path {e.path}, {e.files.size} files listed again"
   -- On the desktop: Editor from the menu, then Clock.lean, found by typing.
-  let item (x y : Float) (i : Nat) : Event := .press (x + 20) (Menu.itemY ⟨x, y⟩ i + itemH / 2)
-  let d ← [Event.menu 300 100, item 300 100 2].foldlM (stepNow svc) start
+  let d ← [Event.menu 300 100, menuItem 300 100 2].foldlM (stepNow svc) start
   let title (d : Desktop) := (d.now.windows.find? (·.id == d.now.focus)).map (·.title)
   IO.println s!"from the menu: {title d}"
   render c d.view; shot c "editor-files.png"

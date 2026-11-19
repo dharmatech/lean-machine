@@ -29,11 +29,10 @@ end LeanMachine
 -- compiled simulation, whose files can't be reloaded; then what reloaded
 -- code costs to run, and memory over many reloads.
 def testReload (c : Canvas) (svc : Services) : IO Unit := do
-  let ms (t0 : Nat) : IO Nat := return ((← IO.monoNanosNow) - t0) / 1000000
   let reloadNow (path src : String) : IO (Outcome × List (Lean.Name × App) × Nat) := do
     let t0 ← IO.monoNanosNow
     let (o, apps) ← svc.reload path src (← IO.CancelToken.new)
-    return (o, apps, ← ms t0)
+    return (o, apps, ← msSince t0)
   IO.println "each app's file, reloaded in the desktop's Lean three times:"
   let mut made : List (Lean.Name × App) := []
   for file in ["Clock", "Placeholder", "Repl", "Editor", "Boids"] do
@@ -61,7 +60,7 @@ def testReload (c : Canvas) (svc : Services) : IO Unit := do
   -- An editor alone, its requests answered at once.
   let key (k : Key) : AppEvent := .key k {}
   let ctrl (ch : Char) : AppEvent := .key (.char ch) { ctrl := true }
-  let ed (e : Editor) (evs : List AppEvent) : IO Editor := evs.foldlM (answerNow svc Editor.heard) e
+  let ed := editorNow svc
   let fileOf (e : Editor) : List Lexed := e.buffer.above.reverse ++ e.buffer.current :: e.buffer.below
   let lineWith (e : Editor) (s : String) : String :=
     ((fileOf e).find? (·.text.startsWith s)).map showLexed |>.getD "?"
@@ -81,7 +80,6 @@ def testReload (c : Canvas) (svc : Services) : IO Unit := do
   -- clock, on Clock.lean.
   let feed := feed svc
   let settle := settle svc
-  let item (x y : Float) (i : Nat) : Event := .press (x + 20) (Menu.itemY ⟨x, y⟩ i + itemH / 2)
   let ctrlE (ch : Char) : Event := .key (.char ch) { ctrl := true }
   let dkey (k : Key) : Event := .key k {}
   -- The REPL can't name the apps, but finds them in the menu's catalog.
@@ -89,7 +87,7 @@ def testReload (c : Canvas) (svc : Services) : IO Unit := do
   let (d, runs) ← feed start {} ([.press 120 200, .text launchLine, dkey .enter])
   let (d, _, seen) ← settle d runs
   IO.println s!"a REPL line, {launchLine}: {seen.map (·.showDone)}; windows {d.now.windows.map (·.title)}"
-  let (d, runs) ← feed start {} [.tick ⟨10, 8, 30⟩, .menu 500 100, item 500 100 2]
+  let (d, runs) ← feed start {} [.tick ⟨10, 8, 30⟩, .menu 500 100, menuItem 500 100 2]
   let (d, runs, _) ← settle d runs
   let (d, runs) ← feed d runs [.text "apps/cl", dkey .enter]
   let (d, runs, _) ← settle d runs
@@ -106,7 +104,7 @@ def testReload (c : Canvas) (svc : Services) : IO Unit := do
     let t0 ← IO.monoNanosNow
     let (d, runs) ← feed d runs [ctrlE 'r']
     let (d, runs, seen) ← settle d runs
-    IO.println s!"    {seen.map (·.showDone)} ({← ms t0} ms)"
+    IO.println s!"    {seen.map (·.showDone)} ({← msSince t0} ms)"
     return (d, runs)
   IO.println s!"on the desktop: windows {windows d}; the clock says {clockSays d}"
   IO.println "  Ctrl+R on Clock.lean as it is:"
@@ -149,7 +147,7 @@ def testReload (c : Canvas) (svc : Services) : IO Unit := do
   let t0 ← IO.monoNanosNow
   let (d, runs) ← feed d runs [ctrlE 'c']
   let (d, runs, seen) ← settle d runs
-  IO.println s!"  Ctrl+R, then Ctrl+C 100 ms later: {seen.map (·.showDone)}, {← ms t0} ms after \
+  IO.println s!"  Ctrl+R, then Ctrl+C 100 ms later: {seen.map (·.showDone)}, {← msSince t0} ms after \
     Ctrl+C; the editor: {(status d edWin).quote}"
   -- A new app goes at the end of the menu, and opens beside the editor;
   -- the placeholders' file replaces Inspector and Notes in place.
@@ -167,8 +165,8 @@ def testReload (c : Canvas) (svc : Services) : IO Unit := do
     let line := (((d.now.windows.find? (·.title == "Boids")).map (·.texts)).getD []).find?
       (·.contains " boids · ")
     (line.map fun s => " · ".intercalate ((s.splitOn " · ").take 3)).getD "?"
-  let (bd, bruns) ← feed start {} [.tick ⟨10, 8, 30⟩, .menu 20 20, item 20 20 5,
-    .menu 500 240, item 500 240 2]
+  let (bd, bruns) ← feed start {} [.tick ⟨10, 8, 30⟩, .menu 20 20, menuItem 20 20 5,
+    .menu 500 240, menuItem 500 240 2]
   let (bd, bruns, _) ← settle bd bruns
   let (bd, bruns) ← feed bd bruns [.text "apps/boids.lean", dkey .enter]
   let (bd, bruns, _) ← settle bd bruns

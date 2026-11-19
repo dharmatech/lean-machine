@@ -52,12 +52,7 @@ def testSlider (c : Canvas) (svc : Services) : IO Unit := do
   IO.println s!"  undone: {radius (steps let_go [undoKey])}; undo steps made by the drag: \
     {let_go.past.length - d.past.length}"
   -- Made in a REPL, then its knob held near the end.
-  let mut d := start
-  let mut seen := []
-  for line in sliderLines do
-    let (d', runs) ← feed svc d {} [.press 120 200, .text line, .key .enter {}]
-    let (d', _, ended) ← settle svc d' runs
-    d := d'; seen := seen ++ ended
+  let (d, seen) ← typedInRepl svc start sliderLines
   IO.println s!"  made in a REPL: {seen.map (·.showDone)}; windows {d.now.windows.map (·.title)}"
   let (x, y) := along d 0.25
   let (x9, _) := along d 0.9

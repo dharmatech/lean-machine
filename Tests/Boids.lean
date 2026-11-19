@@ -12,12 +12,9 @@ namespace LeanMachine.Tests
 -- at 150 boids and at 1000.
 def testBoids (c : Canvas) : IO Unit := do
   IO.println "Boids:"
-  let item (x y : Float) (i : Nat) : Event := .press (x + 20) (Menu.itemY ⟨x, y⟩ i + itemH / 2)
   let key (k : Key) : Event := .key k {}
   let frames (from_ n : Nat) : List Event := (List.range n).map fun i => .frame (from_ + 16 * i)
-  let focused (d : Desktop) : String :=
-    ((d.now.windows.find? (·.id == d.now.focus)).map (·.title)).getD "none"
-  let d := steps start [.tick ⟨10, 8, 30⟩, .menu 20 20, item 20 20 5]
+  let d := steps start [.tick ⟨10, 8, 30⟩, .menu 20 20, menuItem 20 20 5]
   IO.println s!"  from the menu: windows {d.now.windows.map (·.title)}, focus on {focused d}, \
     animates {d.now.animating}"
   let d := steps d (frames 1000 60)

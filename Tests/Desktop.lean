@@ -57,18 +57,15 @@ def sampler : Picture :=
 -- The pure world, driven by a script of events instead of a person.
 def test (c : Canvas) (svc : Services) : IO Unit := do
   let grab := Event.press 300 (160 + 10)          -- Clock's title
-  -- A press on the middle of item `i` of a menu at (x, y).
-  let item (x y : Float) (i : Nat) : Event :=
-    .press (x + 20) (Menu.itemY ⟨x, y⟩ i + itemH / 2)
   -- The menu opens Notes at (100, 400). Its body starts at (103, 428), so
   -- this press drops a dot at (40, 60) in its own coordinates.
   let dot := Event.press (103 + 40) (428 + 60)
   let script := [.tick ⟨10, 8, 30⟩,                 -- every app hears it
                  grab, .motion 1000 120, .release 1000 120,
-                 .menu 600 450, item 600 450 0,     -- right-click, Clock
+                 .menu 600 450, menuItem 600 450 0, -- right-click, Clock
                  .motion 100 400,
                  .key (.char 'n') ctrlShift,        -- the menu here
-                 item 100 400 4,                    -- Notes
+                 menuItem 100 400 4,                -- Notes
                  dot,
                  -- Notes hears typing. A plain or shifted N types; only
                  -- Ctrl+Shift+N is the desktop's.

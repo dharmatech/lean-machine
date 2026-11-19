@@ -29,8 +29,6 @@ def testFrames (c : Canvas) (svc : Services) : IO Unit := do
   let start := steps start [.tick ⟨10, 8, 30⟩]
   let spin (d : Desktop) : String :=
     ((d.now.windows.find? (·.title.startsWith "Spin")).map (·.title)).getD "none"
-  let focused (d : Desktop) : String :=
-    ((d.now.windows.find? (·.id == d.now.focus)).map (·.title)).getD "none"
   IO.println s!"  the start desktop animates: {start.now.animating}"
   -- A spinner, as a run in the REPL (window 1) would open it.
   let d := steps start [.launch 1 spinner, .frame 1000, .frame 1017]
@@ -44,12 +42,7 @@ def testFrames (c : Canvas) (svc : Services) : IO Unit := do
   let db := steps dm [undoKey, .frame 3000]
   IO.println s!"  undone: animates {db.now.animating}; after a frame at 3000 ms: {spin db}"
   -- Made in the REPL: compiled there, and turned by the same frames.
-  let mut d := start
-  let mut seen := []
-  for line in spinnerLines do
-    let (d', runs) ← feed svc d {} [.press 120 200, .text line, .key .enter {}]
-    let (d', _, ended) ← settle svc d' runs
-    d := d'; seen := seen ++ ended
+  let (d, seen) ← typedInRepl svc start spinnerLines
   IO.println s!"  a spinner made in the REPL: {seen.map (·.showDone)}; windows \
     {d.now.windows.map (·.title)}; animates {d.now.animating}"
   render c (steps d [.frame 700]).view; shot c "frames-repl.png"

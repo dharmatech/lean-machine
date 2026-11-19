@@ -16,14 +16,13 @@ def testRuns (c : Canvas) (svc : Services) : IO Unit := do
   let settle := settle svc
   let ctrlC := Event.key (.char 'c') { ctrl := true }
   let enter (s : String) : List Event := [.text s, .key .enter {}]
-  let ms (t0 : Nat) : IO Nat := return ((← IO.monoNanosNow) - t0) / 1000000
   -- Enters each line and waits for it, and says what came back.
   let lines (d : Desktop) (runs : Runs) (ls : List String) :
       IO (Desktop × Runs) := ls.foldlM (init := (d, runs)) fun (d, runs) l => do
     let t0 ← IO.monoNanosNow
     let (d, runs) ← feed d runs (enter l)
     let (d, runs, seen) ← settle d runs
-    IO.println s!"  {l} → {seen.map (·.showDone)} ({← ms t0} ms)"
+    IO.println s!"  {l} → {seen.map (·.showDone)} ({← msSince t0} ms)"
     return (d, runs)
   -- A press in the REPL's body focuses it.
   let (d, runs) ← feed start {} [.press 120 200]
@@ -49,7 +48,7 @@ def testRuns (c : Canvas) (svc : Services) : IO Unit := do
     let (d, runs) ← feed d runs [ctrlC]
     let (d, runs, seen) ← settle d runs
     IO.println s!"{line}, Ctrl+C at 300 ms: {seen.map (·.showDone)}, \
-      {← ms t0} ms after Ctrl+C"
+      {← msSince t0} ms after Ctrl+C"
     return (d, runs)
   -- Stopped by Ctrl+C after 300 ms: compiled busy work, and loops
   -- defined here, which the interpreter runs. A stop is offered to IO
@@ -127,13 +126,12 @@ def testRuns (c : Canvas) (svc : Services) : IO Unit := do
   d := d'; runs := runs'
   IO.println s!"a pure run: {seen.map (·.showDone)}"
   -- Two REPLs evaluating at once: a second from the menu, then the first.
-  let menuItem (i : Nat) : Event := .press (600 + 20) (Menu.itemY ⟨600, 450⟩ i + itemH / 2)
-  (d, runs) ← feed d runs ([.menu 600 450, menuItem 1] ++ enter "Busy.alloc 30" ++
+  (d, runs) ← feed d runs ([.menu 600 450, menuItem 600 450 1] ++ enter "Busy.alloc 30" ++
                            [toRepl] ++ enter "Busy.alloc 30")
   let t0 ← IO.monoNanosNow
   let (d', runs', seen) ← settle d runs
   d := d'; runs := runs'
-  IO.println s!"two REPLs at once: {seen.map (·.showDone)} in {← ms t0} ms"
+  IO.println s!"two REPLs at once: {seen.map (·.showDone)} in {← msSince t0} ms"
   -- A frame, drawn while a run allocates as fast as it can, and without.
   let frameUs (d : Desktop) : IO Nat := do
     let t0 ← IO.monoNanosNow
@@ -155,7 +153,7 @@ def testRuns (c : Canvas) (svc : Services) : IO Unit := do
       | .ok (none, _) => "stopped"
       | .ok (some _, _) => "finished"
       | .error e => toString e
-    IO.println s!"closing the REPL: its run {how} {← ms t0} ms later, \
+    IO.println s!"closing the REPL: its run {how} {← msSince t0} ms later, \
       {runs.live.length} runs going"
   -- What stops leak: 50 evaluations stopped as they allocate.
   let rss1 ← rssMB

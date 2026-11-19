@@ -83,6 +83,23 @@ def shot (c : Canvas) (name : String) : IO Unit := c.savePng (testOut / name).to
 def appNow (svc : Services) (a : App) (e : AppEvent) : IO App :=
   answerNow svc (fun (a : App) e => a.step e) a e
 
+-- An editor after `evs`, with what it asks for worked out at once.
+def editorNow (svc : Services) (e : Editor) (evs : List AppEvent) : IO Editor :=
+  evs.foldlM (answerNow svc Editor.heard) e
+
+-- The desktop after each of `lines` is typed into the REPL, a press in
+-- its body first, and the runs it asks for have ended; and what came
+-- back from them, oldest first.
+def typedInRepl (svc : Services) (d : Desktop) (lines : List String) :
+    IO (Desktop × List Event) := do
+  let mut d := d
+  let mut seen := []
+  for line in lines do
+    let (d', runs) ← feed svc d {} [.press 120 200, .text line, .key .enter {}]
+    let (d', _, ended) ← settle svc d' runs
+    d := d'; seen := seen ++ ended
+  return (d, seen)
+
 -- The memory the process holds (its resident set), in MB.
 def rssMB : IO Nat := do
   let s ← IO.FS.readFile "/proc/self/status"
@@ -96,6 +113,9 @@ def usPer (n : Nat) (act : Nat → IO Unit) : IO Float := do
   let t0 ← IO.monoNanosNow
   for i in [0:n] do act i
   return ((← IO.monoNanosNow) - t0).toFloat / n.toFloat / 1000
+
+-- Milliseconds since `t0`, a time from `IO.monoNanosNow`.
+def msSince (t0 : Nat) : IO Nat := return ((← IO.monoNanosNow) - t0) / 1000000
 
 -- Windows by their titles: where one is, and what it shows.
 def winTitled (d : Desktop) (title : String) : Option Win := d.now.windows.find? (·.title == title)
@@ -111,5 +131,20 @@ def dragBy (x y dx dy : Float) : List Event :=
 -- The desktop after `es`, with nothing its apps ask for done.
 def steps (d : Desktop) (es : List Event) : Desktop := es.foldl Desktop.step d
 def undoKey : Event := .key (.char 'z') ctrlShift
+-- Ctrl+Shift+M and Ctrl+Shift+H: the focused window maximized, or
+-- minimized.
+def maximizeKey : Event := .key (.char 'm') ctrlShift
+def minimizeKey : Event := .key (.char 'h') ctrlShift
+-- A press and a release at (x, y).
+def click (x y : Float) : List Event := [.press x y, .release x y]
+-- A press on the middle of item `i` of a menu opened at (x, y).
+def menuItem (x y : Float) (i : Nat) : Event := .press (x + 20) (Menu.itemY ⟨x, y⟩ i + itemH / 2)
+-- The title of the focused window, or "nothing".
+def focused (d : Desktop) : String :=
+  ((d.now.windows.find? (·.id == d.now.focus)).map (·.title)).getD "nothing"
+-- The line numbers the gutter of the editor window titled `title` shows.
+def lineNumbers (d : Desktop) (title : String) : List String :=
+  (((winTitled d title).map (·.texts)).getD []).filter fun s =>
+    s.length == gutterCols - 1 && !s.trimAscii.isEmpty && s.trimAscii.toString.all Char.isDigit
 
 end LeanMachine.Tests

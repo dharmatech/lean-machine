@@ -335,11 +335,14 @@ the masking test's hooks into runs.cpp, `Tests/Masking.lean`), only
   - `Kit.lean`: what the tests share. `settle` waits for every run to
     end and tells the desktop how each did; `stepNow` steps the desktop
     and settles; `answerNow` steps an app's state and answers what it
-    asks at once, on the test's thread (`hearNow` for a REPL, `appNow`
-    for any app); `steps` steps the desktop with nothing done for it.
-    Then what pictures and windows show (`Picture.texts`, `says`,
-    `rectOf`), `dragBy`, `undoKey`, `shot` (a picture of the canvas in
-    `.lake/test/`), `usPer` and `rssMB`.
+    asks at once, on the test's thread (`hearNow` for a REPL,
+    `editorNow` for an editor, `appNow` for any app); `typedInRepl`
+    types lines into the REPL and settles; `steps` steps the desktop
+    with nothing done for it. Then what pictures and windows show
+    (`Picture.texts`, `says`, `rectOf`, `focused`, `lineNumbers`);
+    input (`menuItem`, `click`, `dragBy`, `undoKey`, `maximizeKey`,
+    `minimizeKey`); `shot` (a picture of the canvas in `.lake/test/`);
+    and `usPer`, `msSince` and `rssMB`.
   - `Desktop.lean`: `test`: the pure world driven by a script of
     events, the menu, Notes typed into and undo; `sampler`, one of each
     kind of picture; what the decoder makes of events; and the REPL
