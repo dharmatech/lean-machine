@@ -1,50 +1,21 @@
 import LeanMachine.Host
 import LeanMachine.Runs
+import LeanMachine.Loop
 import LeanMachine.Eval
 import LeanMachine.View
 import LeanMachine.Slider
 import LeanMachine.Apps.Boids.Flock
 
 -- A desktop as a value. `World.step` and `Desktop.view` are pure (in
--- LeanMachine/); the loop here does the I/O, with `Runs`
--- (LeanMachine/Runs.lean) doing what apps ask and `eval`
--- (LeanMachine/Eval.lean) evaluating Lean, and `render`
--- (LeanMachine/Host.lean) is the only code that draws.
+-- LeanMachine/); the loop here does the I/O, with `feed`
+-- (LeanMachine/Loop.lean) stepping the desktop and handing what apps ask
+-- to `Runs` (LeanMachine/Runs.lean), `eval` (LeanMachine/Eval.lean)
+-- evaluating Lean, and `render` (LeanMachine/Host.lean) the only code
+-- that draws.
 
 open LeanMachine
 
 /-! ## The loop: the I/O -/
-
--- Steps the desktop through `es`, and does what its apps ask as they ask
--- it, with what the loop lends runs. A request answered at once (a stop
--- with no run to stop) is stepped through after the rest.
-partial def feed (svc : Services) (d : Desktop) (runs : Runs) :
-    List Event → IO (Desktop × Runs)
-  | [] => return (d, runs)
-  | e :: rest => do
-    let (d, asked) := (d.step e).takeAsked
-    let mut runs := runs
-    let mut answers := []
-    for a in asked do
-      let (rs, more) ← runs.handle svc d.now a
-      runs := rs
-      answers := answers ++ more
-    feed svc d runs (rest ++ answers)
-
--- How far apart frames are while an app animates, in nanoseconds: 60 a
--- second.
-def framePeriod : Nat := 1000000000 / 60
-
--- When the next frame is due, after one due at `due` and drawn at `now`:
--- a period after `due`, so that frames keep time, unless the loop fell a
--- whole period behind; then a period from `now`, so that the frames it
--- missed aren't drawn all at once.
-def nextFrameAfter (due now : Nat) : Nat :=
-  if now < due + framePeriod then due + framePeriod else now + framePeriod
-
-#guard nextFrameAfter 0 5000000000 == 5000000000 + framePeriod  -- the first in a while
-#guard nextFrameAfter 1000 2001000 == 1000 + framePeriod         -- 2 ms late, on time
-#guard nextFrameAfter 1000 50001000 == 50001000 + framePeriod    -- 50 ms late
 
 -- Applies every waiting event, the outcomes of runs that ended, a tick
 -- with the time, and a frame if one is due (at `due`, in nanoseconds on

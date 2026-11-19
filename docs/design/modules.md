@@ -8,7 +8,7 @@ a folder of modules: Boids' are in `Apps/Boids/`, in `LeanMachine.Boids`. `Pictu
 run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
 `Eval` call C (and `Safepoint`'s safepoints, pure C functions, and
 `Main.lean`'s helpers for `--test`), only
-`Eval` imports Lean, and only they and `Main.lean` touch `IO` (and
+`Eval` imports Lean, and only they, `Loop` and `Main.lean` touch `IO` (and
 `Safepoint`'s `interrupted`, the error a stop becomes).
 
 - `Picture.lean`: `Picture`, plain data: rectangles, circles, rings,
@@ -302,13 +302,18 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   constants of type `App` it added (`constants.map₂`) and `evalConst`
   makes each a value. The editor gets the Lean after the file, with
   `LeanMachine` open, as the REPLs' Lean has it.
-- `Main.lean`: `run`, the loop. `feed` steps the desktop through events
-  and hands what its apps ask to `Runs`, with the world they asked in. Each pass waits for events, but
+- `Loop.lean`: the loop's parts that don't draw. `feed` steps the
+  desktop through events and hands what its apps ask to `Runs`, with
+  the world they asked in; a request answered at once is stepped
+  through after the rest. Frames are `framePeriod` apart, and
+  `nextFrameAfter` says when the next is due. The loop and `--test`
+  both drive the desktop with `feed`.
+- `Main.lean`: `run`, the loop. Each pass waits for events, but
   not past 100 ms or the next second, nor, while an app animates, past
   the next frame (a run that ends wakes it), applies
-  them, then the outcomes of runs that ended, stops the runs of windows
+  them with `feed`, then the outcomes of runs that ended, stops the runs of windows
   that are gone, ticks with the time, gives a frame if one is due
-  (`framePeriod` apart, `nextFrameAfter`), and draws. Also `test`,
+  (`nextFrameAfter`), and draws. Also `test`,
   `testResize`, `testMaximize`, `testFrames`, `testBoids`, `testLean`, `testEditor`, `testReload`, `testRuns` and `testMasking` for `--test`
   (`answerNow` steps an app's state and answers what it asks at once),
   `benchBoids` for `--bench`, and `main`.
