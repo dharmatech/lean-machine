@@ -371,11 +371,26 @@ the masking test's hooks into runs.cpp, `Tests/Masking.lean`), only
     line before left open, an editor alone on a scratch file, then on
     the desktop with Clock.lean, and what it costs
     ([The editor](editor/README.md)).
-  - `Reload.lean`: `testReload`: each app's file reloaded in the
-    desktop's Lean, files that can't be, an editor alone, then the
-    desktop with real runs: Clock, Editor and Boids reloaded from an
-    editor, an error, a stop, a new app (`helloSrc`), and what reloaded
-    code costs ([Reloading](reloading/README.md)).
+  - `Reload.lean`: `testReload`, which runs the phases in `Reload/`
+    in turn ([Reloading](reloading/README.md)). `Kit.lean` has what
+    they share: `reloadNow` (a file reloaded on the test's thread),
+    `reloadOn` (Ctrl+R on the desktop, settled), `editorStatus` and
+    `windowList`.
+    - `Files.lean`: `reloadFiles`: each app's file reloaded in the
+      desktop's Lean, files that can't be, and one with an error; it
+      returns the apps it made.
+    - `Editor.lean`: `reloadInEditor`: Clock.lean reloaded from an
+      editor alone, then with an error, which the editor marks.
+    - `Desktop.lean`: `reloadOnDesktop`: with real runs, Clock.lean
+      edited and reloaded into the open clock, undone, an error,
+      Editor.lean reloaded from an editor, a reload stopped, and a new
+      app (`helloSrc`).
+    - `Boids.lean`: `reloadBoids`: Boids.lean reloaded into an open
+      flock, over the compiled simulation.
+    - `Costs.lean`: `reloadCosts`: a clock, an editor and Boids,
+      compiled against reloaded, and without safepoints.
+    - `Memory.lean`: `reloadMemory`: Clock.lean and Editor.lean
+      reloaded many times, each kept for undo, and memory after.
   - `Runs.lean`: `testRuns`: Lean evaluated on real threads through
     the desktop's REPL, stopped by Ctrl+C, undone, two REPLs at once, a
     window closed under its run, and what stops leak
