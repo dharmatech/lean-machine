@@ -90,7 +90,13 @@ it hears them again. Last, the three lines of
 REPL, which opens a spinner that animates (`frames-repl.png`).
 
 Then Boids, opened from the menu: it's focused, and the desktop
-animates. After 60 frames it's drawn (`boids.png`). Space pauses it,
+animates. After 60 frames it's drawn, its rules beside it
+(`boids.png`). Separation's slider is pressed at its start and dragged
+three quarters along, 40 pixels below its row: 0.4219, a weight on a
+cube; the flock flies on through 60 frames with the knob held
+(`boids-rules.png`). Let go and undone, separation is 0.0010 again, in
+one undo step. H hides the rules, and a press where the slider was
+changes nothing (`boids-no-rules.png`, the field the whole body). Space pauses it,
 and the desktop stops animating, until Space again
 (`boids-paused.png`); minimized, it doesn't animate either. It times a
 frame at 150 boids and, after Up 17 times and 60 more frames, at 1000

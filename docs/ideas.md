@@ -50,8 +50,9 @@
   ([The taskbar guesses how wide text is](design/drawing/guessing-text-widths.md)).
   Monospace text can be measured already.
 - Display scaling and a resizable window.
-- Boids: a window of sliders for its rules, as Schevana's has; draw a
-  flock's lines and dots as one path each
+- Boids: its rules in a window of their own, as Schevana's has, once a
+  window can open another and send it messages; buttons for R, D and S;
+  draw a flock's lines and dots as one path each
   ([At 1000 boids, drawing costs more than the step](design/boids/drawing-costs-more.md));
   a grid of cells, so a boid looks only at its neighbors' cells.
 

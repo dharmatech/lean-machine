@@ -1351,6 +1351,30 @@ def testBoids (c : Canvas) : IO Unit := do
     animates {d.now.animating}"
   let d := steps d (frames 1000 60)
   render c d.view; shot c "boids.png"
+  -- The rules: separation's slider dragged three quarters along, a weight
+  -- on a cube, with the pointer below its row, the flock flying on.
+  let rowSays (d : Desktop) (label : String) : String :=
+    let texts := ((winTitled d "Boids").map (·.texts)).getD []
+    ((texts.dropWhile (· != label)).drop 1).headD "none"
+  let along (r : Boids.Row) (t : Float) : Float × Float :=
+    match winTitled d "Boids" with
+    | some w =>
+      let b := Boids.sliderBox w.bodyW (Boids.Row.all.idxOf r)
+      (w.bodyX + b.x + Slider.knob + t * (b.w - 2 * Slider.knob), w.bodyY + b.y + b.h / 2)
+    | none => (0, 0)
+  let (x, y) := along (.setting .separation) 0
+  let (x3, _) := along (.setting .separation) 0.75
+  let held := steps d ([.press x y, .motion x3 (y + 40)] ++ frames 2000 60)
+  IO.println s!"  separation at first {rowSays d "separation"}; dragged three quarters along, \
+    40 below, 60 frames: {rowSays held "separation"}"
+  render c held.view; shot c "boids-rules.png"
+  let let_go := steps held [.release x3 (y + 40)]
+  IO.println s!"  let go, then undone: {rowSays (steps let_go [undoKey]) "separation"}, \
+    {let_go.past.length - d.past.length} undo step"
+  let hidden := steps let_go [key (.char 'h')]
+  IO.println s!"  H: rows shown {rowSays hidden "separation" != "none"}; a press on the \
+    slider's place changes it: {rowSays (steps hidden [.press x y, key (.char 'h')]) "separation" != rowSays let_go "separation"}"
+  render c (steps hidden (frames 3000 60)).view; shot c "boids-no-rules.png"
   let paused := steps d [key (.char ' ')]
   IO.println s!"  Space: animates {paused.now.animating}; again: \
     {(steps paused [key (.char ' ')]).now.animating}"

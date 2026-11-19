@@ -24,6 +24,12 @@ and a line for each boid, takes 245 µs at 150 boids against 10
 compiled, and 1.4 ms at 1000 against 65 µs. That is still less than
 drawing it: 3.2 and 12 ms.
 
+With its rules panel, Boids.lean is twice as long (341 lines against
+164), and reloads in 0.42 s against 0.19: Lean elaborates and compiles
+twice as much, and its checks cost no more
+([Pictures nested, not appended](../boids/nested-not-appended.md) has
+how it was 0.56 s first).
+
 The price: the simulation's files can't be reloaded. The REPLs' Lean
 has their declarations already
 ([Lean can't redefine a declaration](no-redefinition.md)), so Ctrl+R

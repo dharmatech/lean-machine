@@ -28,6 +28,8 @@ The REPLs' Lean imports the module, compiled, as it does Boids'
 simulation, so a REPL can make a slider, and a reloaded app can have
 some.
 
-How the pointer reaches it: [An app hears a drag](../world/drags.md)
+How the pointer reaches it: [An app hears a drag](../world/drags.md).
+Boids' rules are a column of them, made from its state as it's drawn
+([The rules panel keeps only which slider is held](../boids/rules-panel.md)).
 
 [↑ Widgets](README.md)

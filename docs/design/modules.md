@@ -141,7 +141,15 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   its rules, the `StdGen` that scatters it and picks random rules, the
   body's size, whether it runs, and the frames' pace, smoothed. A frame
   steps the flock (`Flock.stepOn`) while it runs; R, D, S, Up, Down and
-  Space change it; the app animates while it runs. The view draws each
+  Space change it; the app animates while it runs. The rules show
+  beside the field, a `Row` each for the count and every `Setting`,
+  with its label, a `Slider` made from the state (`State.slider`) and
+  its value (`Setting.readout`); `sliderBox` places each for the view
+  and for a press. The state keeps only which row is held
+  (`State.held`), and `State.pointed` passes a press, motion or release
+  to that row's slider and takes its value back (`State.setRow`). H
+  hides the rules (`rulesShown`), and the field takes their room
+  (`fieldWidth`). The view draws each
   boid as a dot and a line toward its heading, cut to the field, and a
   status line with the count and frames a second. `#guard`s check the
   keys and the pace as it builds, and again as it reloads. It reloads
@@ -160,7 +168,7 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
     `separate`, and Flake's `stepAside` and `backOff` for blockers.
   - `Rules.lean`: `Rules`, whose fields' defaults are the original
     settings (`{}`). `Setting` names each one, with its `range`, for
-    random rules (`Rules.random`) and the sliders to come; `Rules.set`
+    random rules (`Rules.random`) and the rules' sliders; `Rules.set`
     keeps the speed limits from crossing.
   - `Flock.lean`: `Flock`, an array of boids. `Boid.steer` weighs and
     adds the pushes, and `Flock.step` steers every boid by the same

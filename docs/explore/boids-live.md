@@ -14,6 +14,9 @@ in the editor; nothing is saved unless you press Ctrl+S.
   yellow, `0xe0af68`, to `0x9ece6a`.
 - **Longer heading lines.** In the same place, change
   `b.velocity * (4 : Float)` to `(10 : Float)`.
+- **Wider sliders.** Near the top, change `panelW` from `360` to `460`.
+  The rules take more of the window, and each slider is 100 pixels
+  longer.
 - **A new key.** In `State.heard`, under the line for `'d'`, add:
 
   ```lean
