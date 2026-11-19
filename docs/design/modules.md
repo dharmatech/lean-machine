@@ -322,8 +322,8 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   them with `feed`, then the outcomes of runs that ended, stops the runs of windows
   that are gone, ticks with the time, gives a frame if one is due
   (`nextFrameAfter`), and draws. Also the tests for `--test` that
-  haven't moved to `Tests/` yet: `test`, `testLean`, `testEditor`,
-  `testReload`, `testRuns` and `testMasking`; and `main`, which runs
+  haven't moved to `Tests/` yet: `test`, `testReload`, `testRuns` and
+  `testMasking`; and `main`, which runs
   them for `--test`, and `Boids.bench` (`Apps/Boids/Bench.lean`) for
   `--bench`.
 - `Tests/`: the tests `--test` runs, in `LeanMachine.Tests`, moving
@@ -358,6 +358,13 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   - `Minimize.lean`: `testMinimize`: windows minimized and brought
     back, the taskbar's buttons, and the boxes on a title
     ([Minimizing](world/minimizing.md)).
+  - `Highlight.lean`: `testLean`: the tokens the REPL's Lean reads in a
+    line, what Tab makes of names, on a REPL alone and on the desktop,
+    and what each costs ([Highlighting](highlighting/README.md)).
+  - `Editor.lean`: `testEditor`: a file's lines read with what the
+    line before left open, an editor alone on a scratch file, then on
+    the desktop with Clock.lean, and what it costs
+    ([The editor](editor/README.md)).
 - `shim.c`: Cairo draws into an image in memory, and SDL3 shows it in
   one window and hands back events, text input included, the wheel,
   and a wake (an SDL user event). No GPU in the design.
