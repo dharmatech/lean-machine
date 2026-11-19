@@ -121,7 +121,7 @@ def Win.button (w : Win) (x bw : Float) (focused hovered : Bool) : Picture :=
 -- one text at the right, so that Cairo spaces them.
 def World.barView (world : World) (earlier : Nat) : Picture :=
   let bar := world.taskbar
-  let hovered := ((world.buttonAt world.mouseX world.mouseY).map (·.id)).getD 0
+  let hovered := ((bar.buttonAt world.mouseX world.mouseY).map (·.id)).getD 0
   .group ([.rect 0 barY screenW barH 0 0x16161e] ++
     bar.buttons.map (fun (w, x) => w.button x bar.w (w.id == world.focus) (w.id == hovered)) ++
     [.textIn (screenW - countW - hintW) barY (countW + hintW - 14) barH barTextSize .right

@@ -4,7 +4,7 @@ The Lean code is one module per file in `LeanMachine/`, in the
 `LeanMachine` namespace, with a thin `Main.lean` on top, and the tests
 for `--test` in `Tests/`, a library of their own. An app can be
 a folder of modules: Boids' are in `Apps/Boids/`, in `LeanMachine.Boids`. `Picture`, `Key`,
-`App`, `Slider`, `Safepoint`, `Busy`, `Text`, the apps in `Apps/`, `World`,
+`App`, `Slider`, `Safepoint`, `Busy`, `Text`, the apps in `Apps/`, `Win`, `Taskbar`, `World`,
 `Desktop` and `View` are pure and import only each other. `Ambient` is what code in a
 run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
 `Eval` (with its parts in `Eval/`) call C (and `Safepoint`'s safepoints,
@@ -182,8 +182,25 @@ pure C functions, and the masking test's hooks into runs.cpp,
     flock after it ([How fast a step is](boids/step-speed.md),
     [The same bits as Chez](boids/same-bits-as-chez.md)). The REPLs'
     Lean doesn't import it.
-- `World.lean`: windows, the pointer, the menu and events. Each window
-  holds an app. `World.step : World → Event → World` moves, resizes,
+- `Win.lean`: a window and the screen it's on: the screen's size, a
+  window's parts (`titleH`, `frame`) and the least it can be resized to
+  (`minW`, `minH`), the `Event`s the desktop hears, and `Win`, a window
+  holding an app. A window knows what a press on it finds: its title
+  (`Win.onTitle`) and the boxes on it (`Win.onClose`, `Win.onMax`,
+  `Win.onMin`), its body (`Win.inBody`), and the `Edges` it grabs
+  (`Win.edgesAt`), which a drag moves (`Rect.drag`). Its app hears
+  events moved into the app's coordinates (`Win.toApp`, `Win.hear`), and
+  what it asks goes out as `Asked`, marked with the window. `Win.place`
+  puts it at a `Rect`, and its app hears `resize` when its body's size
+  changes.
+- `Taskbar.lean`: the taskbar along the bottom, in front of the windows
+  (`inBar`). `Taskbar.of` lays out a button for each of a list of
+  windows, by id, and says whether the hint has room, guessing text
+  widths (`approxW`); `Taskbar.buttonAt` is the window whose button is
+  at a point. It needs only the windows, so it comes before the world,
+  whose taskbar is `World.taskbar`.
+- `World.lean`: the windows, the pointer, the menu, and what an event
+  does. Each window (`Win`) holds an app. `World.step : World → Event → World` moves, resizes,
   maximizes, restores, minimizes, raises, focuses and closes windows, passes ticks to every app,
   frames (`Event.frame`) to the apps that animate in windows that
   aren't minimized (`World.animating`: whether there are any), and passes other
@@ -211,11 +228,9 @@ pure C functions, and the masking test's hooks into runs.cpp,
   or Ctrl+Shift+H) keeps its place and `restore`, isn't drawn or found by
   a press (`World.visible`), and still hears ticks; `World.minimize`
   gives the focus to the frontmost window left, and `World.focusOn`
-  brings one back, raised and focused. The taskbar is in front of the
-  windows (`inBar`): `World.taskbar` lays out a button for each window,
-  by id, and says whether the hint has room, guessing text widths
-  (`approxW`); a press on a button (`World.buttonAt`) minimizes the
-  focused window or focuses another (`World.pressButton`).
+  brings one back, raised and focused. A press on a taskbar button
+  (`World.taskbar`, `Taskbar.buttonAt`) minimizes the focused window or
+  focuses another (`World.pressButton`).
   The world holds a `catalog` of apps, the menu's items, each by the
   name of its declaration (`LeanMachine.clock`), and each window
   remembers the declaration its app came from (`Win.origin`; none for
