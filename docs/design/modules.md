@@ -323,8 +323,8 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   that are gone, ticks with the time, gives a frame if one is due
   (`nextFrameAfter`), and draws. Also the tests for `--test` that
   haven't moved to `Tests/` yet: `test`, `testResize`, `testMaximize`,
-  `testMinimize`, `testBoids`, `testSlider`, `testLean`, `testEditor`,
-  `testReload`, `testRuns` and `testMasking`; and `main`, which runs
+  `testMinimize`, `testLean`, `testEditor`, `testReload`, `testRuns`
+  and `testMasking`; and `main`, which runs
   them for `--test`, and `Boids.bench` (`Apps/Boids/Bench.lean`) for
   `--bench`.
 - `Tests/`: the tests `--test` runs, in `LeanMachine.Tests`, moving
@@ -344,6 +344,12 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
     `.lake/test/`), `usPer` and `rssMB`.
   - `Frames.lean`: `testFrames`: a spinner, an app that animates,
     opened, minimized, undone, and made in a REPL.
+  - `Boids.lean`: `testBoids`: Boids from the menu, its rules' sliders,
+    H, Space and minimizing, and what a frame costs at 150 boids and
+    at 1000.
+  - `Slider.lean`: `testSlider`: `sizer`, the slider of
+    [the slider exploration](../explore/slider.md) in a window, dragged
+    and undone, then the same slider made in a REPL (`sliderLines`).
 - `shim.c`: Cairo draws into an image in memory, and SDL3 shows it in
   one window and hands back events, text input included, the wheel,
   and a wake (an SDL user event). No GPU in the design.

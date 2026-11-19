@@ -3,11 +3,12 @@ import LeanMachine.Runs
 import LeanMachine.Loop
 import LeanMachine.Eval
 import LeanMachine.View
-import LeanMachine.Slider
 import LeanMachine.Apps.Boids.Bench
 import Tests.Show
 import Tests.Kit
 import Tests.Frames
+import Tests.Boids
+import Tests.Slider
 
 -- A desktop as a value. `World.step` and `Desktop.view` are pure (in
 -- LeanMachine/); the loop here does the I/O, with `feed`
@@ -1098,125 +1099,6 @@ def testMinimize (c : Canvas) : IO Unit := do
   let d := steps start (click 885 354)
   IO.println s!"  Notes maximized, the pointer on its green box: {boxesAt d (screenW - 36) 14}"
   render c (d.step (.motion (screenW - 36) 14)).view; shot c "boxes-max.png"
-
-/-! ### Boids, for `testBoids` -/
-
--- Boids from the menu: keys, frames, minimizing, and what a frame costs
--- at 150 boids and at 1000.
-def testBoids (c : Canvas) : IO Unit := do
-  IO.println "Boids:"
-  let item (x y : Float) (i : Nat) : Event := .press (x + 20) (Menu.itemY ⟨x, y⟩ i + itemH / 2)
-  let key (k : Key) : Event := .key k {}
-  let frames (from_ n : Nat) : List Event := (List.range n).map fun i => .frame (from_ + 16 * i)
-  let focused (d : Desktop) : String :=
-    ((d.now.windows.find? (·.id == d.now.focus)).map (·.title)).getD "none"
-  let d := steps start [.tick ⟨10, 8, 30⟩, .menu 20 20, item 20 20 5]
-  IO.println s!"  from the menu: windows {d.now.windows.map (·.title)}, focus on {focused d}, \
-    animates {d.now.animating}"
-  let d := steps d (frames 1000 60)
-  render c d.view; shot c "boids.png"
-  -- The rules: separation's slider dragged three quarters along, a weight
-  -- on a cube, with the pointer below its row, the flock flying on.
-  let rowSays (d : Desktop) (label : String) : String :=
-    let texts := ((winTitled d "Boids").map (·.texts)).getD []
-    ((texts.dropWhile (· != label)).drop 1).headD "none"
-  let along (r : Boids.Row) (t : Float) : Float × Float :=
-    match winTitled d "Boids" with
-    | some w =>
-      let b := Boids.sliderBox w.bodyW (Boids.Row.all.idxOf r)
-      (w.bodyX + b.x + Slider.knob + t * (b.w - 2 * Slider.knob), w.bodyY + b.y + b.h / 2)
-    | none => (0, 0)
-  let (x, y) := along (.setting .separation) 0
-  let (x3, _) := along (.setting .separation) 0.75
-  let held := steps d ([.press x y, .motion x3 (y + 40)] ++ frames 2000 60)
-  IO.println s!"  separation at first {rowSays d "separation"}; dragged three quarters along, \
-    40 below, 60 frames: {rowSays held "separation"}"
-  render c held.view; shot c "boids-rules.png"
-  let let_go := steps held [.release x3 (y + 40)]
-  IO.println s!"  let go, then undone: {rowSays (steps let_go [undoKey]) "separation"}, \
-    {let_go.past.length - d.past.length} undo step"
-  let hidden := steps let_go [key (.char 'h')]
-  IO.println s!"  H: rows shown {rowSays hidden "separation" != "none"}; a press on the \
-    slider's place changes it: {rowSays (steps hidden [.press x y, key (.char 'h')]) "separation" != rowSays let_go "separation"}"
-  render c (steps hidden (frames 3000 60)).view; shot c "boids-no-rules.png"
-  let paused := steps d [key (.char ' ')]
-  IO.println s!"  Space: animates {paused.now.animating}; again: \
-    {(steps paused [key (.char ' ')]).now.animating}"
-  render c paused.view; shot c "boids-paused.png"
-  let hidden := steps d [.key (.char 'h') ctrlShift]
-  IO.println s!"  minimized: animates {hidden.now.animating}"
-  -- What a frame costs: the step (a frame to the world, whose Boids
-  -- steps its flock), the view, and drawing it.
-  let cost (d : Desktop) (label : String) : IO Unit := do
-    let stepUs ← usPer 50 fun i => do
-      if !(d.step (.frame (5000 + 16 * i))).now.animating then IO.println "?"
-    let viewUs ← usPer 50 fun i =>
-      match (if i == 50 then start else d).view with
-      | .group [] => IO.println "?"
-      | _ => pure ()
-    let drawUs ← usPer 50 fun _ => render c d.view
-    IO.println s!"  {label}: a frame's step {stepUs} µs, the desktop's view {viewUs} µs, \
-      drawn in {drawUs} µs"
-  cost d "150 boids"
-  let many := steps d (List.replicate 17 (key .up) ++ frames 2000 60)
-  render c many.view; shot c "boids-1000.png"
-  cost many "1000 boids"
-
-/-! ### A slider, for `testSlider` -/
-
--- The slider of docs/explore/slider.md, with what it's set to written
--- under it: a circle as wide as the slider says.
-def sizeBox : Rect := ⟨20, 20, 300, Slider.height⟩
-def sizer : App :=
-  App.of "Size" ({ lo := 1, hi := 80, value := 20 } : Slider) (·.heard sizeBox)
-    fun s w h => .group [s.view sizeBox, .text 20 60 13 0x9aa5ce s!"radius {s.value}",
-                         .circle (w / 2) (h / 2 + 20) s.value 0x9ece6a]
-
--- The lines docs/explore/slider.md types into a REPL.
-def sliderLines : List String :=
-  ["def box : Rect := ⟨20, 20, 300, Slider.height⟩",
-   "def look (s : Slider) (w h : Float) : Picture := \
-      .group [s.view box, .circle (w / 2) (h / 2 + 20) s.value 0x9ece6a]",
-   "launch (App.of \"Size\" ({ lo := 1, hi := 80, value := 20 } : Slider) (·.heard box) look)"]
-
--- A slider in a window, dragged with the pointer: through the world,
--- past its end and out of the window, and back with one undo. Then
--- the same slider made in a REPL.
-def testSlider (c : Canvas) (svc : Services) : IO Unit := do
-  IO.println "a slider:"
-  let start := steps start [.tick ⟨10, 8, 30⟩]
-  -- Where `t` of the way along a window's slider is on the screen.
-  let along (d : Desktop) (t : Float) : Float × Float :=
-    match winTitled d "Size" with
-    | some w => (w.bodyX + sizeBox.x + Slider.knob + t * (sizeBox.w - 2 * Slider.knob),
-                 w.bodyY + sizeBox.y + sizeBox.h / 2)
-    | none => (0, 0)
-  let radius (d : Desktop) : String := says d "Size" "radius"
-  let d := steps start [.launch 1 sizer]
-  let (x, y) := along d 0.5
-  let (x3, _) := along d 0.75
-  let (far, _) := along d 2
-  let pressed := steps d [.press x y]
-  let held := steps pressed [.motion x3 (y + 100)]
-  IO.println s!"  pressed halfway: {radius pressed}; moved three quarters along, 100 below: \
-    {radius held}"
-  render c held.view; shot c "slider.png"
-  let let_go := steps held [.motion far y, .release far y]
-  IO.println s!"  moved out of the window past the end, and let go: {radius let_go}; \
-    a motion then: {radius (steps let_go [.motion x y])}"
-  IO.println s!"  undone: {radius (steps let_go [undoKey])}; undo steps made by the drag: \
-    {let_go.past.length - d.past.length}"
-  -- Made in a REPL, then its knob held near the end.
-  let mut d := start
-  let mut seen := []
-  for line in sliderLines do
-    let (d', runs) ← feed svc d {} [.press 120 200, .text line, .key .enter {}]
-    let (d', _, ended) ← settle svc d' runs
-    d := d'; seen := seen ++ ended
-  IO.println s!"  made in a REPL: {seen.map (·.showDone)}; windows {d.now.windows.map (·.title)}"
-  let (x, y) := along d 0.25
-  let (x9, _) := along d 0.9
-  render c (steps d [.press x y, .motion x9 y]).view; shot c "slider-repl.png"
 
 def main (args : List String) : IO Unit := do
   let c ← Canvas.new screenW.toUInt32 screenH.toUInt32
