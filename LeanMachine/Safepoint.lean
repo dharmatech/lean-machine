@@ -3,8 +3,8 @@
 A run is stopped at a safepoint (runs.cpp). Every small allocation is
 one; so is `poll`, which compiled code calls where it likes; and the
 REPL's Lean puts a call to `safepoint` or `interruptNow` at the start of
-every function it compiles (LeanMachine/Eval.lean), so that its loops
-can be stopped too.
+every function it compiles (LeanMachine/Eval/Safepoints.lean), so that
+its loops can be stopped too.
 
 A stop is first offered to IO code compiled in the REPL as
 `IO.Error.interrupted`, which Lean's `try`/`catch`/`finally` see; if

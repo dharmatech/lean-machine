@@ -7,9 +7,9 @@ a folder of modules: Boids' are in `Apps/Boids/`, in `LeanMachine.Boids`. `Pictu
 `App`, `Slider`, `Safepoint`, `Busy`, `Text`, the apps in `Apps/`, `World`,
 `Desktop` and `View` are pure and import only each other. `Ambient` is what code in a
 run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
-`Eval` call C (and `Safepoint`'s safepoints, pure C functions, and
-the masking test's hooks into runs.cpp, `Tests/Masking.lean`), only
-`Eval` imports Lean, and only they, `Loop`, Boids' `Bench`, `Main.lean` and the tests touch `IO` (and
+`Eval` (with its parts in `Eval/`) call C (and `Safepoint`'s safepoints,
+pure C functions, and the masking test's hooks into runs.cpp,
+`Tests/Masking.lean`), only `Eval` and `Eval/` import Lean, and only they, `Loop`, Boids' `Bench`, `Main.lean` and the tests touch `IO` (and
 `Safepoint`'s `interrupted`, the error a stop becomes).
 
 - `Picture.lean`: `Picture`, plain data: rectangles, circles, rings,
@@ -272,44 +272,52 @@ the masking test's hooks into runs.cpp, `Tests/Masking.lean`), only
   a reload made (a run ends with an `Ending`, its outcome and those
   apps), and `Event.launch`, and `keepFor`
   stops the runs of windows that are gone.
-- `Eval.lean`: Lean in the desktop. `startBase` imports the REPLs' Lean
-  (`replImports`: `Init`, `LeanMachine.Ambient`, `LeanMachine.Text`,
-  `LeanMachine.Slider` and Boids' simulation,
-  `LeanMachine.Apps.Boids.Flock`; not the apps) on a thread of its
-  own as the desktop starts, and opens `LeanMachine`. `eval` takes a
-  line, wraps it in `#eval` if it parses as a term, and elaborates it on
-  the calling thread with `runCommands`, its own loop over Lean's
-  parser and `elabCommandTopLevel`, with the run's cancel token; once
-  it's set, no more commands are elaborated and the line has stopped,
-  cleanly. An `Env` holds Lean's `Command.State`, the environment and
-  the scopes left open, with `lexLine` and `completeIn` over it.
-  `lexLine` runs Lean's tokenizer (`tokenFn`) along the line with the
-  environment's token table, and calls an identifier a constant if
-  `resolveGlobalName` finds one for it from the line's scope; what lies
-  between tokens and isn't blank is a comment. `completeIn` looks the
-  name's last part up among the names in the namespace its other parts
-  name, from the current namespace, the ones around it, the root and
-  the open ones, plus what the REPL defined and, with no namespace,
-  keywords; theorems come after the rest. The names imported are
-  indexed by namespace once, in a task of its own after the import
-  (`nameIndex`), and every REPL shares the index. The REPLs' Lean compiles with one pass more than
-  Lean's own (`withSafepoints`): `safepointsPass`, at the end of the
-  compiler's impure phase, starts every function at a safepoint, and an
-  IO function (`returnsIO`) at one that can return `interrupted`.
-  `lexFrom` is `tokensFrom`: a comment or string the line before left
-  open is read to its end by hand (`commentEnd`, `stringEnd`), the rest
-  by `lexLine`, and where the tokenizer gave up on a comment or string
-  this line leaves open (`openAt`), that's coloured as what it is and
-  carried to the next line. `projectRoot` is the desktop's own folder,
-  noted as this module compiles (`getFileName`: Lake passes Lean full
-  paths). `reload` refuses a file whose module (`moduleOf` its path)
-  the REPLs' Lean imported, parses its header, checks that everything it
-  imports is in the REPLs' Lean, and elaborates the rest of the file
-  there, from a fresh `Command.State` (the root namespace, nothing
-  open), with the run's cancel token; with no error, `appsIn` finds the
-  constants of type `App` it added (`constants.map₂`) and `evalConst`
-  makes each a value. The editor gets the Lean after the file, with
-  `LeanMachine` open, as the REPLs' Lean has it.
+- `Eval.lean`: Lean in the desktop: it imports the parts in `Eval/`,
+  and has `projectRoot`, the desktop's own folder, noted as this module
+  compiles (`getFileName`: Lake passes Lean full paths), two folders up
+  from it.
+- `Eval/`: Lean's side of the desktop, in parts, each importing the ones
+  it needs before it.
+  - `Safepoints.lean`: the REPLs' Lean compiles with one pass more than
+    Lean's own (`withSafepoints`): `safepointsPass`, at the end of the
+    compiler's impure phase, starts every function at a safepoint, and
+    an IO function (`returnsIO`) at one that can return `interrupted`.
+  - `Tokens.lean`: `lexLine` runs Lean's tokenizer (`tokenFn`) along the
+    line with the environment's token table, and calls an identifier a
+    constant if `resolveGlobalName` finds one for it from the line's
+    scope; what lies between tokens and isn't blank is a comment.
+    `lexFrom` is `tokensFrom`: a comment or string the line before left
+    open is read to its end by hand (`commentEnd`, `stringEnd`), the
+    rest by `lexLine`, and where the tokenizer gave up on a comment or
+    string this line leaves open (`openAt`), that's coloured as what it
+    is and carried to the next line.
+  - `Names.lean`: `completeIn` looks the name's last part up among the
+    names in the namespace its other parts name, from the current
+    namespace, the ones around it, the root and the open ones, plus what
+    the REPL defined and, with no namespace, keywords; theorems come
+    after the rest. The names imported are indexed by namespace once, in
+    a task of its own after the import (`nameIndex`), and every REPL
+    shares the index.
+  - `Repl.lean`: `startBase` imports the REPLs' Lean (`replImports`:
+    `Init`, `LeanMachine.Ambient`, `LeanMachine.Text`,
+    `LeanMachine.Slider` and Boids' simulation,
+    `LeanMachine.Apps.Boids.Flock`; not the apps) on a thread of its own
+    as the desktop starts, and opens `LeanMachine`. `eval` takes a line,
+    wraps it in `#eval` if it parses as a term, and elaborates it on the
+    calling thread with `runCommands`, its own loop over Lean's parser
+    and `elabCommandTopLevel`, with the run's cancel token; once it's
+    set, no more commands are elaborated and the line has stopped,
+    cleanly. An `Env` holds Lean's `Command.State`, the environment and
+    the scopes left open, with `lexLine` and `completeIn` over it
+    (`Env.of`).
+  - `Reload.lean`: `reload` refuses a file whose module (`moduleOf` its
+    path) the REPLs' Lean imported, parses its header, checks that
+    everything it imports is in the REPLs' Lean, and elaborates the rest
+    of the file there, from a fresh `Command.State` (the root namespace,
+    nothing open), with the run's cancel token; with no error, `appsIn`
+    finds the constants of type `App` it added (`constants.map₂`) and
+    `evalConst` makes each a value. The editor gets the Lean after the
+    file, with `LeanMachine` open, as the REPLs' Lean has it.
 - `Loop.lean`: the loop's parts that don't draw. `feed` steps the
   desktop through events and hands what its apps ask to `Runs`, with
   the world they asked in; a request answered at once is stepped

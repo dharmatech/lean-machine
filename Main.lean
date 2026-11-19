@@ -9,7 +9,7 @@ import Tests
 -- A desktop as a value. `World.step` and `Desktop.view` are pure (in
 -- LeanMachine/); the loop here does the I/O, with `feed`
 -- (LeanMachine/Loop.lean) stepping the desktop and handing what apps ask
--- to `Runs` (LeanMachine/Runs.lean), `eval` (LeanMachine/Eval.lean)
+-- to `Runs` (LeanMachine/Runs.lean), `eval` (LeanMachine/Eval/Repl.lean)
 -- evaluating Lean, and `render` (LeanMachine/Host.lean) the only code
 -- that draws. The tests for `--test` are in Tests/, and Tests.lean runs
 -- them all (`Tests.all`).

@@ -53,7 +53,7 @@ inductive Carry where
 -- Lean's own state for a REPL: the environment its lines are elaborated
 -- in, with the scopes they left open (`open`, `namespace`, `variable`).
 -- Opaque here, so that the pure modules needn't import Lean; the loop's
--- side (LeanMachine/Eval.lean) knows what it is.
+-- side (LeanMachine/Eval/Repl.lean) knows what it is.
 opaque LeanStatePointed : NonemptyType
 def LeanState := LeanStatePointed.type
 instance : Nonempty LeanState := LeanStatePointed.property
