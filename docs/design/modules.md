@@ -8,7 +8,7 @@ a folder of modules: Boids' are in `Apps/Boids/`, in `LeanMachine.Boids`. `Pictu
 `Desktop` and `View` are pure and import only each other. `Ambient` is what code in a
 run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
 `Eval` call C (and `Safepoint`'s safepoints, pure C functions, and
-`Main.lean`'s helpers for `--test`), only
+the masking test's hooks into runs.cpp, `Tests/Masking.lean`), only
 `Eval` imports Lean, and only they, `Loop`, Boids' `Bench`, `Main.lean` and the tests touch `IO` (and
 `Safepoint`'s `interrupted`, the error a stop becomes).
 
@@ -322,8 +322,8 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   them with `feed`, then the outcomes of runs that ended, stops the runs of windows
   that are gone, ticks with the time, gives a frame if one is due
   (`nextFrameAfter`), and draws. Also the tests for `--test` that
-  haven't moved to `Tests/` yet: `test`, `testRuns` and `testMasking`;
-  and `main`, which runs
+  haven't moved to `Tests/` yet: `test`, with `sampler`; and `main`,
+  which runs
   them for `--test`, and `Boids.bench` (`Apps/Boids/Bench.lean`) for
   `--bench`.
 - `Tests/`: the tests `--test` runs, in `LeanMachine.Tests`, moving
@@ -370,6 +370,14 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
     desktop with real runs: Clock, Editor and Boids reloaded from an
     editor, an error, a stop, a new app (`helloSrc`), and what reloaded
     code costs ([Reloading](reloading/README.md)).
+  - `Runs.lean`: `testRuns`: Lean evaluated on real threads through
+    the desktop's REPL, stopped by Ctrl+C, undone, two REPLs at once, a
+    window closed under its run, and what stops leak
+    ([Runs](runs/README.md), [Stopping](stopping/README.md)).
+  - `Masking.lean`: `testMasking`: `Ref.modify` and a mutex cut off
+    midway, with runs.cpp's masking off, then on
+    ([Masking](stopping/masking.md)). `setMasking` and `refTaken` are
+    runs.cpp's, for this test.
 - `shim.c`: Cairo draws into an image in memory, and SDL3 shows it in
   one window and hands back events, text input included, the wheel,
   and a wake (an SDL user event). No GPU in the design.
