@@ -322,9 +322,8 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   them with `feed`, then the outcomes of runs that ended, stops the runs of windows
   that are gone, ticks with the time, gives a frame if one is due
   (`nextFrameAfter`), and draws. Also the tests for `--test` that
-  haven't moved to `Tests/` yet: `test`, `testResize`, `testMaximize`,
-  `testMinimize`, `testLean`, `testEditor`, `testReload`, `testRuns`
-  and `testMasking`; and `main`, which runs
+  haven't moved to `Tests/` yet: `test`, `testLean`, `testEditor`,
+  `testReload`, `testRuns` and `testMasking`; and `main`, which runs
   them for `--test`, and `Boids.bench` (`Apps/Boids/Bench.lean`) for
   `--bench`.
 - `Tests/`: the tests `--test` runs, in `LeanMachine.Tests`, moving
@@ -350,6 +349,15 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   - `Slider.lean`: `testSlider`: `sizer`, the slider of
     [the slider exploration](../explore/slider.md) in a window, dragged
     and undone, then the same slider made in a REPL (`sliderLines`).
+  - `Resize.lean`: `testResize`: windows resized by an edge, a corner
+    and the grip, an editor told its sizes, and a reload that keeps a
+    window's size ([Resizing](world/resizing.md)).
+  - `Maximize.lean`: `testMaximize`: by the box on a title, a double
+    click and Ctrl+Shift+M, each undone, and a maximized window dragged
+    ([Maximizing](world/maximizing.md)).
+  - `Minimize.lean`: `testMinimize`: windows minimized and brought
+    back, the taskbar's buttons, and the boxes on a title
+    ([Minimizing](world/minimizing.md)).
 - `shim.c`: Cairo draws into an image in memory, and SDL3 shows it in
   one window and hands back events, text input included, the wheel,
   and a wake (an SDL user event). No GPU in the design.
