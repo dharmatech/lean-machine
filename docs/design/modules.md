@@ -8,7 +8,7 @@ a folder of modules: Boids' are in `Apps/Boids/`, in `LeanMachine.Boids`. `Pictu
 run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
 `Eval` call C (and `Safepoint`'s safepoints, pure C functions, and
 `Main.lean`'s helpers for `--test`), only
-`Eval` imports Lean, and only they, `Loop` and `Main.lean` touch `IO` (and
+`Eval` imports Lean, and only they, `Loop`, Boids' `Bench` and `Main.lean` touch `IO` (and
 `Safepoint`'s `interrupted`, the error a stop becomes).
 
 - `Picture.lean`: `Picture`, plain data: rectangles, circles, rings,
@@ -155,9 +155,10 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   keys and the pace as it builds, and again as it reloads. It reloads
   over the compiled simulation, which the REPLs' Lean imports
   ([A compiled simulation under a reloaded app](reloading/compiled-under-reloaded.md)).
-- `Apps/Boids/`: Boids' simulation. The modules import only Init and
-  each other, and each ends with `#guard`s that run as it builds. The
-  REPLs' Lean imports them, so they can't be reloaded.
+- `Apps/Boids/`: Boids' simulation, and its bench. The modules import
+  only Init and each other. The simulation's end with `#guard`s that
+  run as they build, and the REPLs' Lean imports them, so they can't be
+  reloaded.
   - `Vec.lean`: a vector in the plane, with `+`, `-`, `* k` and `/ k`
     through Lean's classes, `dot`, `length2`, `length`, `perp` and
     `mean`, all `@[inline]`; and `pi`.
@@ -174,6 +175,12 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
     adds the pushes, and `Flock.step` steers every boid by the same
     flock. Then the screen's speed limits (`atLeast`, `atMost`) and
     `wrap`, `stepOn` (a frame), `scatter` and `resize`.
+  - `Bench.lean`: `bench`, for `--bench`, times `stepOn` on
+    `benchFlock`, a flock any language can make the same way, under the
+    default rules and `heaviest`, and prints the bits of a sum of the
+    flock after it ([How fast a step is](boids/step-speed.md),
+    [The same bits as Chez](boids/same-bits-as-chez.md)). The REPLs'
+    Lean doesn't import it.
 - `World.lean`: windows, the pointer, the menu and events. Each window
   holds an app. `World.step : World → Event → World` moves, resizes,
   maximizes, restores, minimizes, raises, focuses and closes windows, passes ticks to every app,
@@ -316,7 +323,8 @@ run can reach, for the REPL's Lean. Only `Host`, `Runs`, `Ambient` and
   (`nextFrameAfter`), and draws. Also `test`,
   `testResize`, `testMaximize`, `testFrames`, `testBoids`, `testLean`, `testEditor`, `testReload`, `testRuns` and `testMasking` for `--test`
   (`answerNow` steps an app's state and answers what it asks at once),
-  `benchBoids` for `--bench`, and `main`.
+  and `main`, which runs `Boids.bench` (`Apps/Boids/Bench.lean`) for
+  `--bench`.
 - `shim.c`: Cairo draws into an image in memory, and SDL3 shows it in
   one window and hands back events, text input included, the wheel,
   and a wake (an SDL user event). No GPU in the design.
