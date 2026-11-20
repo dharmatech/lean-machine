@@ -212,6 +212,8 @@ extern SDL_Texture *SDL_CreateTexture(SDL_Renderer *r, uint32_t format,
                                       int access, int w, int h);
 extern void SDL_DestroyTexture(SDL_Texture *t);
 extern bool SDL_SetWindowMinimumSize(SDL_Window *win, int w, int h);
+extern bool SDL_SetWindowFullscreen(SDL_Window *win, bool fullscreen);
+extern uint64_t SDL_GetWindowFlags(SDL_Window *win);
 extern bool SDL_UpdateTexture(SDL_Texture *t, const void *rect,
                               const void *pixels, int pitch);
 extern bool SDL_RenderTexture(SDL_Renderer *r, SDL_Texture *t,
@@ -225,12 +227,14 @@ extern uint16_t SDL_GetModState(void);
 extern bool SDL_PushEvent(void *event);
 
 #define SDL_INIT_VIDEO 0x20u
+#define SDL_WINDOW_FULLSCREEN 0x1u
 #define SDL_WINDOW_RESIZABLE 0x20u
 #define SDL_PIXELFORMAT_ARGB8888 0x16362004u   // Cairo's ARGB32, same bytes
 #define SDL_TEXTUREACCESS_STREAMING 1
 #define SDL_EVENT_USER 0x8000u
 
 static bool host_opened = false;
+static SDL_Window *host_window = NULL;
 static SDL_Renderer *host_renderer = NULL;
 static SDL_Texture *host_texture = NULL;
 static int host_texture_w = 0, host_texture_h = 0;   // the canvas's size
@@ -266,7 +270,20 @@ LEAN_EXPORT lean_obj_res sv_host_open(b_lean_obj_arg title, uint32_t w,
   if (!host_texture_fit(w, h)) return sdl_error();
   // Without this SDL sends keys but no text.
   SDL_StartTextInput(win);
+  host_window = win;
   host_opened = true;
+  return unit();
+}
+
+// Whether the window fills the screen. SDL's full screen, with no mode
+// set, is the desktop's own size, with no frame or title.
+LEAN_EXPORT lean_obj_res sv_host_fullscreen(lean_obj_arg io) {
+  bool on = host_window && (SDL_GetWindowFlags(host_window) & SDL_WINDOW_FULLSCREEN);
+  return lean_io_result_mk_ok(lean_box(on));
+}
+
+LEAN_EXPORT lean_obj_res sv_host_set_fullscreen(uint8_t on, lean_obj_arg io) {
+  if (host_window) SDL_SetWindowFullscreen(host_window, on);
   return unit();
 }
 

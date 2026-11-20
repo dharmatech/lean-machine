@@ -19,6 +19,20 @@ the canvas: `sv_host_present` makes it again when the canvas is a new
 size. So the loop's only job is to keep the canvas the size of the
 world's screen, and nothing in C keeps the size apart from it.
 
+## Full screen
+
+F11 puts the window in full screen and takes it out
+(`Host.setFullscreen`, asking `Host.fullscreen` which it is). SDL's
+full screen, with no display mode chosen, is the desktop's own size,
+with no frame or title, and it comes back as a resize like any other,
+so nothing else had to change. F11 is the loop's, like Esc, and apps
+never hear it: it's a key for the host's window, not the world, and
+undo doesn't touch it. Esc, which quits, takes the window out of full
+screen first, as it closes an open menu first, so that the key most
+people press to get out of full screen doesn't quit.
+
+## Tried without a window manager
+
 A resize was tried without a window manager: a library preloaded into
 the desktop, under SDL's `offscreen` driver, resized the window
 between frames and saved what the renderer showed, at 900 × 600,
@@ -26,6 +40,9 @@ between frames and saved what the renderer showed, at 900 × 600,
 right with the software renderer (`SDL_RENDER_DRIVER=software`). With
 the offscreen driver's GL renderer, the window that grew showed only
 its first 1280 × 800: that driver's GL surface keeps its first size,
-which no real window has to.
+which no real window has to. Another preload sent F11 and Esc as keys
+going down: F11 filled the offscreen display, 1024 × 768, Esc took
+it back to 1280 × 800, F11 twice went in and out, and Esc outside full
+screen quit.
 
 [↑ Drawing and input](README.md)

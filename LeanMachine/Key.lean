@@ -19,6 +19,7 @@ inductive Key where
   | char (c : Char)          -- a key with a character on it, lower case
   | enter | tab | backspace | delete | escape
   | left | right | up | down | home | «end» | pageUp | pageDown
+  | f11                      -- the loop's: full screen, which apps don't hear
   | other (code : UInt32)    -- any other key, by SDL's number for it
   deriving BEq, Inhabited, Repr
 
@@ -38,6 +39,7 @@ def Key.name : Key → String
   | .«end» => "End"
   | .pageUp => "PageUp"
   | .pageDown => "PageDown"
+  | .f11 => "F11"
   | .other n => s!"key {n}"
 
 -- "Ctrl+Shift+N"

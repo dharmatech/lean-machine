@@ -24,7 +24,8 @@ pure C functions, and the masking test's hooks into runs.cpp,
 - `Key.lean`: `Key`, which key went down (a character key, in lower
   case, or Enter, the arrows, Home and the like), and `Mods`, the Ctrl,
   Shift and Alt held with it. `Key.show` writes one as "Ctrl+Shift+N".
-  The desktop's own keys are Ctrl+Shift and a letter (`desktopKey`).
+  The desktop's own keys are Ctrl+Shift and a letter (`desktopKey`);
+  F11 (`Key.f11`) is the loop's.
 - `App.lean`: an `App` is a value with a title, a `view` at a given
   size, a `step` that returns the app an event makes and the requests
   it makes then (`none`: no change, nothing asked), and the `size` a new
@@ -272,7 +273,8 @@ pure C functions, and the masking test's hooks into runs.cpp,
   earlier worlds as one right-aligned text. The menu draws
   over everything, its item under the pointer lit.
 - `Host.lean`: the calls into `shim.c` (a canvas and one window, which
-  `Host.open` makes resizable down to a least size),
+  `Host.open` makes resizable down to a least size, and which
+  `Host.setFullscreen` puts in full screen or takes out),
   `Event.decode` for the events the shim hands back as a `RawEvent` (a
   press brings SDL's count of clicks in a row; the
   right button is `Event.menu`; SDL's keycodes and modifier bits become a
@@ -354,7 +356,9 @@ pure C functions, and the masking test's hooks into runs.cpp,
   that are gone, ticks with the time, gives a frame if one is due
   (`nextFrameAfter`), and draws, on a new canvas if the world's screen
   changed ([A resized window draws on a new
-  canvas](drawing/new-canvas.md)). Also `main`, which runs the loop, or
+  canvas](drawing/new-canvas.md)). F11 puts the window in full screen
+  or takes it out; Esc closes the menu, takes the window out of full
+  screen, or quits. Also `main`, which runs the loop, or
   `Tests.all` for `--test`, or `Boids.bench` (`Apps/Boids/Bench.lean`)
   for `--bench`.
 - `Tests.lean`: `Tests.all`, which runs the test in each module of

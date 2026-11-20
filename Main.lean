@@ -41,10 +41,15 @@ partial def run (c : Canvas) (svc : Services) (d : Desktop) (runs : Runs)
   while raw.nums.get! 0 != 0 do
     match Event.decode raw with
     | some .quit => quit := true
-    -- Esc closes the menu if it's open, and quits if it isn't.
+    -- F11 puts the window in full screen, or takes it out; the world
+    -- hears the new size.
+    | some (.key .f11 _) => Host.setFullscreen !(← Host.fullscreen)
+    -- Esc closes the menu if it's open, takes the window out of full
+    -- screen if it's in it, and quits if neither.
     | some (.key .escape m) =>
-      if d.now.menu.isNone then quit := true
-      else (d, runs) ← feed svc d runs [.key .escape m]
+      if d.now.menu.isSome then (d, runs) ← feed svc d runs [.key .escape m]
+      else if (← Host.fullscreen) then Host.setFullscreen false
+      else quit := true
     | some e => (d, runs) ← feed svc d runs [e]
     | none => pure ()
     raw ← Host.event 0

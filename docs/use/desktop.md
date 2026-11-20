@@ -5,7 +5,7 @@ one to open it in a new window where the menu was. Esc closes the menu,
 and so does a click off it. Drag a window by its title (not below the
 taskbar: the top of the title stays above it), click one to raise it,
 click the red box on a title to close it, Ctrl+Shift+Z to undo, Esc to
-quit. Clock is a clock. With the pointer on the boxes of any title, each
+quit (in full screen, Esc leaves full screen first). Clock is a clock. With the pointer on the boxes of any title, each
 shows what it does: × closes, − minimizes, a square maximizes, and two
 squares restore a maximized window.
 
@@ -51,6 +51,10 @@ it stay where they are; as it shrinks, its right edge and the taskbar
 push them in, only as far as they have to. A maximized window fills
 the new desktop. Undo doesn't change the window's size: it brings the
 windows back as they were, inside the size it is now.
+
+F11 puts the Lean Machine window in full screen: it fills your screen,
+with no frame or title, and the desktop fits itself to it as it does
+to any size. F11 again, or Esc, takes it out. Apps never hear F11.
 
 How it works: [The world and apps](../design/world/README.md)
 

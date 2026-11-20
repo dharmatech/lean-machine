@@ -104,7 +104,7 @@ def test (c : Canvas) (svc : Services) : IO Unit := do
     | some _ => "another event"
     | none => "nothing"
   let decoded := [raw 5 78 0x41, raw 5 0x40000050 0, raw 5 13 0x200,
-                  raw 6 0x40 0 "n", raw 6 0 0 "é", raw 9 900 600].map (shown ∘ Event.decode)
+                  raw 6 0x40 0 "n", raw 6 0 0 "é", raw 9 900 600, raw 5 0x40000044 0].map (shown ∘ Event.decode)
   IO.println s!"decoded: {decoded}"
   IO.println s!"mono: the font's advance is {← c.monoEm} em, the grid's \
     {monoAdvance 1} em"

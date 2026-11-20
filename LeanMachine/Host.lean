@@ -44,6 +44,11 @@ instance : Nonempty Canvas := CanvasPointed.property
 @[extern "sv_host_open"] opaque Host.open (title : @& String)
   (w h leastW leastH : UInt32) : IO Unit
 @[extern "sv_host_present"] opaque Host.present (c : @& Canvas) : IO Unit
+-- Whether the window fills the screen, with no frame or title (false
+-- before `Host.open`), and the window put in full screen or taken out.
+-- Either way SDL says the window was resized.
+@[extern "sv_host_fullscreen"] opaque Host.fullscreen : IO Bool
+@[extern "sv_host_set_fullscreen"] opaque Host.setFullscreen (on : Bool) : IO Unit
 -- Ends the loop's wait for events. Any thread may call it: a run calls it
 -- when it ends. Does nothing before `Host.open`.
 @[extern "sv_host_wake"] opaque Host.wake : IO Unit
@@ -75,6 +80,7 @@ def Key.ofSDL (code : UInt32) : Key :=
   | 0x4000004D => .«end»
   | 0x4000004B => .pageUp
   | 0x4000004E => .pageDown
+  | 0x40000044 => .f11
   | n => if 32 ≤ n && n < 127 then .char (Char.ofNat n).toLower
          else .other code
 
