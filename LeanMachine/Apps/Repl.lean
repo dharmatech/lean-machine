@@ -12,7 +12,8 @@ and Down recall earlier lines. The line may hold several: a paste
 among them before they recall, and Enter evaluates them all, as one
 source. The line, and every line entered, is
 coloured by the tokens the REPL's Lean reads in it, and Tab completes
-the name before the cursor from the names that Lean has. Pure: the REPL
+the name before the cursor from the names that Lean has. A press and a
+drag select what the REPL shows, and Ctrl+C copies it. Pure: the REPL
 only asks, and its Lean is a value with pure functions for both.
 Everything is monospace, so where a character or the cursor goes is
 arithmetic on `monoAdvance`. -/
@@ -31,6 +32,36 @@ inductive Entry where
   | error (s : String)
   deriving Repr
 
+-- What an entry says; for a line entered, without its prompt.
+def Entry.text : Entry → String
+  | .note s | .input s _ | .output s | .warning s | .error s => s
+
+def Entry.isInput : Entry → Bool
+  | .input .. => true
+  | _ => false
+
+-- Parts of what the REPL shows, in order: the entries of the transcript,
+-- each by its place counted from the oldest, so it stays put as entries
+-- come, then the line being edited (`none`).
+def partLt : Option Nat → Option Nat → Bool
+  | some i, some j => i < j
+  | some _, none => true
+  | none, _ => false
+
+-- A place between two characters of what the REPL shows: in a part, and
+-- how many characters into it.
+structure Spot where
+  part : Option Nat
+  at_ : Nat
+  deriving BEq, Repr, Inhabited
+
+def Spot.lt (a b : Spot) : Bool :=
+  partLt a.part b.part || (a.part == b.part && a.at_ < b.at_)
+
+-- Does a selection from `a` to `z` take along the prompt of a line that
+-- starts at `s`? Only when it goes past one part, and has that start.
+def leadTaken (a z s : Spot) : Bool := a.part != z.part && !s.lt a && s.lt z
+
 -- The run the REPL is waiting for.
 structure Waiting where
   tag : Nat
@@ -40,6 +71,8 @@ structure Waiting where
 -- The run that fetches the desktop's own Lean, for a REPL that has
 -- none yet: an empty line evaluated in it.
 def leanTag : Nat := 0
+
+def replSize : Float × Float := (560, 300)   -- a new REPL's body
 
 structure Repl where
   line : Line := {}
@@ -53,10 +86,22 @@ structure Repl where
   nextTag : Nat := leanTag + 1
   env : Option Env := none        -- the REPL's Lean; `none`: the desktop's own
   askedLean : Option TimeOfDay := none  -- the tick it last asked for that in
+  -- Where a press was, and where the pointer is now: what's selected
+  -- runs between them.
+  selecting : Option (Spot × Spot) := none
+  dragging : Bool := false        -- a press, not released yet
+  -- The body's size, as the window last said it: a press needs it, to
+  -- find the row it's on.
+  size : Float × Float := replSize
 
 namespace Repl
 
 def edit (r : Repl) (f : Line → Line) : Repl := { r with line := f r.line }
+
+-- The selection, its first end first, unless its ends are the same.
+def selection (r : Repl) : Option (Spot × Spot) := do
+  let (m, p) ← r.selecting
+  if m == p then none else some (if m.lt p then (m, p) else (p, m))
 
 -- The line's tokens, read again by the REPL's Lean: after anything that
 -- may change the line or the Lean. None until the REPL has its Lean.
@@ -177,37 +222,6 @@ def tab (r : Repl) : Option Repl := do
   let r := if more.isEmpty then r else r.edit (·.insert more)
   some { r with offer := if names.length == 1 then none else some { word, names } }
 
--- An edit or a key that isn't Tab takes the offer away.
-def heard (r : Repl) : AppEvent → Option (Repl × List Request)
-  | .text s => some ({ r with offer := none }.edit (·.insert s), [])
-  -- A paste goes in the line, like typing, its lines and all; blank
-  -- lines around them don't count.
-  | .paste s =>
-    let blank (l : String) := l.trimAscii.isEmpty
-    match ((pastedLines s).dropWhile blank).reverse.dropWhile blank |>.reverse with
-    | [] => none
-    | ls => some ({ r with offer := none }.edit (·.insert ("\n".intercalate ls)), [])
-  | .key .tab m => if m == {} then (r.tab).map (·, []) else none
-  | .key .enter m =>
-    if m == { shift := true } then some ({ r with offer := none }.newLine, [])
-    else { r with offer := none }.enter
-  | .key (.char 'c') m =>
-    if m == { ctrl := true } then { r with offer := none }.interrupt else none
-  | .key k _ => ({ r with offer := none }.editKey k).map (·, [])
-  | .done tag o ms =>
-    if tag == leanTag then
-      match o, r.env with
-      | .evaluated _ env, none => some ({ r with env := some env }, [])
-      | _, _ => none
-    else (r.ended tag o ms).map (·, [])
-  | .tick t => r.askLean t
-  | _ => none
-
--- Other modifiers don't matter yet: Ctrl+Left is Left. Whatever changes
--- the REPL, the line's tokens are read again.
-def step (r : Repl) (e : AppEvent) : Option (Repl × List Request) :=
-  (r.heard e).map fun (r, asks) => (r.relex, asks)
-
 end Repl
 
 /-! ## How it looks -/
@@ -226,21 +240,43 @@ def lineSpans (cs : Array Char) : List (Nat × Nat) :=
 
 #guard lineSpans "ab\n\ncd".toList.toArray == [(0, 2), (3, 3), (4, 6)]
 
+-- What a row shows of a text cut into rows: its characters from `lo`
+-- to `hi`, after `lead` columns of prompt (or spaces as wide), and
+-- whether it's the last row of one of the text's own lines, so that
+-- a "\n" comes after it, or the next part.
+structure Span where
+  lo : Nat := 0
+  hi : Nat := 0
+  lead : Nat := 0
+  ends : Bool := false
+  deriving BEq, Repr
+
+-- `s` in rows of `cols`, each character in its colour from `rgbs`. Each
+-- of its own lines starts its own rows, the first after `lead`, the
+-- rest after as many spaces, so their indents line up. Each row comes
+-- with what it shows of `s`.
+def spannedRows (cols : Nat) (s : String) (rgbs : Array UInt32) (lead : String := "") :
+    List (Row × Span) :=
+  let cs := s.toList.toArray
+  (lineSpans cs).zipIdx.flatMap fun ((lo, hi), i) =>
+    let ld := if i == 0 then lead else "".pushn ' ' lead.length
+    let rows := runRows cols (ld.toList.toArray ++ cs.extract lo hi)
+      (Array.replicate ld.length promptRgb ++ rgbs.extract lo hi)
+    -- How many characters of `s` are before column `j` of the line's
+    -- rows, counted on from row to row.
+    let at_ (j : Nat) := min hi (lo + (j - ld.length))
+    rows.zipIdx.map fun (row, k) =>
+      (row, { lo := at_ (k * cols), hi := at_ ((k + 1) * cols),
+              lead := if k == 0 then ld.length else 0, ends := k + 1 == rows.length })
+
+#guard (spannedRows 10 "ab\n12345678901" (Array.replicate 14 0) "> ").map (·.2) ==
+  [⟨0, 2, 2, true⟩, ⟨3, 11, 2, false⟩, ⟨11, 14, 0, true⟩]
+#guard (spannedRows 4 "" #[]).map (·.2) == [⟨0, 0, 0, true⟩]
+
 -- How many rows of `cols` a line of `n` characters after the prompt takes.
 def rowsFor (cols n : Nat) : Nat := max 1 ((prompt.length + n + cols - 1) / cols)
 
--- The prompt, then the line coloured by its tokens, in rows of `cols`.
--- Each of its own lines after the first starts with spaces as wide as
--- the prompt, so their indents line up.
-def promptRows (cols : Nat) (s : String) (tokens : Array Token) : List Row :=
-  let cs := s.toList.toArray
-  let rgbs := tokenColours cs.size tokens
-  (lineSpans cs).zipIdx.flatMap fun ((lo, hi), i) =>
-    let lead := if i == 0 then prompt else "".pushn ' ' prompt.length
-    runRows cols (lead.toList.toArray ++ cs.extract lo hi)
-      (Array.replicate lead.length promptRgb ++ rgbs.extract lo hi)
-
--- Where the cursor goes among `promptRows`: its row and column. At the
+-- Where the cursor goes among the line's rows: its row and column. At the
 -- end of a full row, in the last line, it starts the next row; in a
 -- line before it, it stays at the end of that row.
 def promptCursor (cols : Nat) (s : String) (cursor : Nat) : Nat × Nat :=
@@ -257,55 +293,226 @@ def promptCursor (cols : Nat) (s : String) (cursor : Nat) : Nat × Nat :=
 #guard promptCursor 10 "ab\ncdef" 5 == (1, 4)
 #guard promptCursor 10 "12345678\nx" 8 == (0, 10)
 
-def Entry.rows (cols : Nat) : Entry → List Row
-  | .input s tokens => promptRows cols s tokens
-  | .output s => lines s 0x9ece6a cols
-  | .note s => lines s 0x565f89 cols
-  | .warning s => lines s 0xe0af68 cols
-  | .error s => lines s 0xf7768e cols
+-- An entry in rows: a line entered after the prompt, coloured by its
+-- tokens; the rest in a colour for each kind.
+def Entry.rows (cols : Nat) (e : Entry) : List (Row × Span) :=
+  let s := e.text
+  let inOne (rgb : UInt32) := spannedRows cols s (Array.replicate s.length rgb)
+  match e with
+  | .input _ tokens => spannedRows cols s (tokenColours s.length tokens) prompt
+  | .output _ => inOne 0x9ece6a
+  | .note _ => inOne 0x565f89
+  | .warning _ => inOne 0xe0af68
+  | .error _ => inOne 0xf7768e
+
+-- A row of the view: what it draws, and what it shows of the REPL's
+-- text, in which part.
+structure Shown where
+  row : Row
+  part : Option Nat
+  span : Span
+
+-- What the view shows at a width and height: its rows, top to bottom,
+-- the cursor's row among them and its column, and the columns a row has.
+structure Layout where
+  rows : List Shown
+  cursor : Nat × Nat
+  cols : Nat
 
 -- The transcript, then a row that says a run is going, then the line
 -- being edited and the cursor in it, then what Tab offered. Long lines
 -- wrap. When it all doesn't fit, the oldest rows go off the top, so the
--- newest stay in view, and the cursor's row with them.
-def Repl.view (r : Repl) (w h : Float) : Picture :=
-  let adv := monoAdvance replFont
-  let cols := max 4 ((w - 2 * replPad) / adv).floor.toUInt64.toNat
+-- newest stay in view, and the cursor's row with them. The rows that
+-- show none of the text are on the end of the newest entry (a run's
+-- row) or of the line (what Tab offered).
+def Repl.layout (r : Repl) (w h : Float) : Layout :=
+  let cols := max 4 ((w - 2 * replPad) / monoAdvance replFont).floor.toUInt64.toNat
   let fits := max 1 ((h - 2 * replPad) / replLineH).floor.toUInt64.toNat
+  let s := r.line.text
+  let n := s.length
   -- Where the cursor is, among the rows of the line.
-  let (cRow, cCol) := promptCursor cols r.line.text r.line.cursor
-  let editing := promptRows cols r.line.text r.tokens
-  let editing := if cRow < editing.length then editing else editing ++ [[]]
-  let status : List Row := match r.waiting with
-    | some w => lines (if w.stopping then "stopping…" else "running… Ctrl+C stops it")
-        0xe0af68 cols
+  let (cRow, cCol) := promptCursor cols s r.line.cursor
+  let editing := (spannedRows cols s (tokenColours n r.tokens) prompt).map fun (row, span) =>
+    ({ row, part := none, span } : Shown)
+  let lineEnd : Span := { lo := n, hi := n }
+  let editing := if cRow < editing.length then editing
+    else editing ++ [{ row := [], part := none, span := lineEnd }]
+  let count := r.transcript.length
+  let status : List Shown := match r.waiting with
+    | some w =>
+      let newest := (r.transcript.head?.map (·.text.length)).getD 0
+      (lines (if w.stopping then "stopping…" else "running… Ctrl+C stops it") 0xe0af68 cols).map
+        ({ row := ·, part := if count > 0 then some (count - 1) else none,
+           span := { lo := newest, hi := newest } })
     | none => []
-  let offered := match r.offer with
-    | some o => o.rows cols
+  let offered : List Shown := match r.offer with
+    | some o => (o.rows cols).map ({ row := ·, part := none, span := lineEnd })
     | none => []
   -- Only the newest entries are cut into rows: enough to fill the view.
-  let rec newest (es : List Entry) (rows : List Row) (n : Nat) : List Row :=
+  -- The `i`th newest is the `count - 1 - i`th from the oldest.
+  let rec newest (es : List Entry) (i : Nat) (rows : List Shown) (k : Nat) : List Shown :=
     match es with
     | e :: rest =>
-      if n ≥ fits then rows
+      if k ≥ fits then rows
       else
-        let rs := e.rows cols
-        newest rest (rs ++ rows) (n + rs.length)
+        let rs := (e.rows cols).map fun (row, span) =>
+          ({ row, part := some (count - 1 - i), span } : Shown)
+        newest rest (i + 1) (rs ++ rows) (k + rs.length)
     | [] => rows
   let below := status ++ editing ++ offered
-  let all := newest r.transcript below below.length
+  let all := newest r.transcript 0 below below.length
   -- The oldest rows go, but never the cursor's: a line taller than the
   -- view shows from the cursor's row down.
   let cursorAt := all.length - offered.length - editing.length + cRow
   let gone := min (all.length - fits) cursorAt
-  let rows := (all.drop gone).take fits
-  let cursorRow := cursorAt - gone
+  { rows := (all.drop gone).take fits, cursor := (cursorAt - gone, cCol), cols }
+
+-- The columns of a row that are selected, from `a` to `z`, if any: its
+-- characters between them; its prompt too, when the selection takes it
+-- along; and a column more, for its line's end, when the selection goes
+-- on past that.
+def Shown.selectedCols (v : Shown) (a z : Spot) (cols : Nat) : Option (Nat × Nat) :=
+  let here (n : Nat) : Spot := { part := v.part, at_ := n }
+  let ⟨lo, hi, lead, ends⟩ := v.span
+  let within (s : Spot) : Nat := if s.lt (here lo) then lo else if (here hi).lt s then hi else s.at_
+  let c0 := if lead > 0 && leadTaken a z (here lo) then 0 else lead + (within a - lo)
+  let c1 := lead + (within z - lo)
+  let c1 := if ends && !(here hi).lt a && (here hi).lt z then min cols (c1 + 1) else c1
+  if c0 < c1 then some (c0, c1) else none
+
+-- The rows, a box behind what's selected of each, and the cursor.
+def Repl.view (r : Repl) (w h : Float) : Picture :=
+  let adv := monoAdvance replFont
+  let l := r.layout w h
   let top (i : Nat) : Float := replPad + replLineH * i.toFloat
-  .group (rows.zipIdx.flatMap (fun (row, i) =>
-      row.map fun run =>
+  let selected : List Picture := match r.selection with
+    | some (a, z) => l.rows.zipIdx.filterMap fun (v, i) => do
+      let (c0, c1) ← v.selectedCols a z l.cols
+      some (.rect (replPad + adv * c0.toFloat) (top i) (adv * (c1 - c0).toFloat) replLineH 0
+        selectedRgb)
+    | none => []
+  let (cursorRow, cCol) := l.cursor
+  .group (selected ++ l.rows.zipIdx.flatMap (fun (v, i) =>
+      v.row.map fun run =>
         .mono (replPad + adv * run.col.toFloat) (top i + 14) replFont run.rgb run.text) ++
     [.rect (replPad + adv * cCol.toFloat - 1) (top cursorRow + 2)
        2 (replLineH - 4) 0 0xbb9af7])
+
+/-! ## Selecting and copying -/
+
+namespace Repl
+
+-- What a press at (x, y) in the body is on: the place between two
+-- characters nearest it, in the row it's on. Above the rows, the start
+-- of the first; below them, the end of the last.
+def pointAt (r : Repl) (x y : Float) : Spot :=
+  let l := r.layout r.size.1 r.size.2
+  let i := ((y - replPad) / replLineH).floor
+  let col := ((x - replPad) / monoAdvance replFont).round
+  let (i, col) := if i < 0 then (0, 0)
+    else if i.toUInt64.toNat ≥ l.rows.length then (l.rows.length - 1, l.cols)
+    else (i.toUInt64.toNat, if col < 0 then 0 else col.toUInt64.toNat)
+  match l.rows[i]? with
+  | some v => { part := v.part, at_ := min v.span.hi (v.span.lo + (col - v.span.lead)) }
+  | none => { part := none, at_ := 0 }
+
+-- Each part, oldest first: which, its text, and whether its lines are
+-- led by a prompt.
+def parts (r : Repl) : List (Option Nat × String × Bool) :=
+  r.transcript.reverse.zipIdx.map (fun (e, i) => (some i, e.text, e.isInput)) ++
+    [(none, r.line.text, true)]
+
+-- What's selected, as it was written: a line that wraps is one line.
+-- Within one part, its characters, so a line copied from a line entered
+-- pastes back as it was. Past one part, the parts on lines of their own,
+-- and each line entered whose start is selected led by its prompt (or
+-- spaces as wide), so it reads as the REPL showed it.
+def selected (r : Repl) : String :=
+  match r.selection with
+  | none => ""
+  | some (a, z) =>
+    let chars (s : String) (lo hi : Nat) : String := String.ofList ((s.toList.drop lo).take (hi - lo))
+    let some_ := r.parts.filter fun (p, _) => !partLt p a.part && !partLt z.part p
+    if a.part == z.part then
+      match some_ with
+      | [(_, s, _)] => chars s a.at_ z.at_
+      | _ => ""
+    else "\n".intercalate (some_.map fun (p, s, led) =>
+      let lo := if p == a.part then a.at_ else 0
+      let hi := if p == z.part then z.at_ else s.length
+      if !led then chars s lo hi else
+      let cs := s.toList.toArray
+      "\n".intercalate ((lineSpans cs).zipIdx.filterMap fun ((ls, le), i) =>
+        if hi < ls || le < lo then none else
+        let lead := if !leadTaken a z { part := p, at_ := ls } then ""
+          else if i == 0 then prompt else "".pushn ' ' prompt.length
+        some (lead ++ String.ofList (cs.extract (max ls lo) (min le hi)).toList)))
+
+-- Ctrl+C or Ctrl+Shift+C: what's selected goes on the clipboard, and the
+-- selection ends, so that the next Ctrl+C stops a run again. Nothing
+-- selected, nothing.
+def copy (r : Repl) : Option (Repl × List Request) :=
+  if r.selection.isNone then none
+  else some ({ r with selecting := none, dragging := false }, [.copy r.selected])
+
+/-! ## What it hears -/
+
+-- Keys, typing and pastes. An edit or a key that isn't Tab takes the
+-- offer away.
+def keyed (r : Repl) : AppEvent → Option (Repl × List Request)
+  | .text s => some ({ r with offer := none }.edit (·.insert s), [])
+  -- A paste goes in the line, like typing, its lines and all; blank
+  -- lines around them don't count.
+  | .paste s =>
+    let blank (l : String) := l.trimAscii.isEmpty
+    match ((pastedLines s).dropWhile blank).reverse.dropWhile blank |>.reverse with
+    | [] => none
+    | ls => some ({ r with offer := none }.edit (·.insert ("\n".intercalate ls)), [])
+  | .key .tab m => if m == {} then (r.tab).map (·, []) else none
+  | .key .enter m =>
+    if m == { shift := true } then some ({ r with offer := none }.newLine, [])
+    else { r with offer := none }.enter
+  | .key (.char 'c') m =>
+    if m == { ctrl := true } then { r with offer := none }.interrupt else none
+  | .key k _ => ({ r with offer := none }.editKey k).map (·, [])
+  | _ => none
+
+-- A press puts both ends of the selection where it lands, and a drag
+-- moves the second to the pointer. A key that does something ends the
+-- selection; Ctrl+C copies it, and with nothing selected stops a run or
+-- clears the line. Ctrl+Shift+C only copies.
+def heard (r : Repl) (e : AppEvent) : Option (Repl × List Request) :=
+  match e with
+  | .key (.char 'c') m =>
+    if m == ctrlShift || (m == { ctrl := true } && r.selection.isSome) then r.copy
+    else { r with selecting := none, dragging := false }.keyed e
+  | .press x y =>
+    let s := r.pointAt x y
+    some ({ r with selecting := some (s, s), dragging := true }, [])
+  | .motion x y =>
+    match r.selecting with
+    | some (m, p) =>
+      if !r.dragging then none else
+      let s := r.pointAt x y
+      if s == p then none else some ({ r with selecting := some (m, s) }, [])
+    | none => none
+  | .release _ _ => if r.dragging then some ({ r with dragging := false }, []) else none
+  | .resize w h => some ({ r with size := (w, h) }, [])
+  | .done tag o ms =>
+    if tag == leanTag then
+      match o, r.env with
+      | .evaluated _ env, none => some ({ r with env := some env }, [])
+      | _, _ => none
+    else (r.ended tag o ms).map (·, [])
+  | .tick t => r.askLean t
+  | _ => { r with selecting := none, dragging := false }.keyed e
+
+-- Other modifiers don't matter yet: Ctrl+Left is Left. Whatever changes
+-- the REPL, the line's tokens are read again.
+def step (r : Repl) (e : AppEvent) : Option (Repl × List Request) :=
+  (r.heard e).map fun (r, asks) => (r.relex, asks)
+
+end Repl
 
 def repl : App :=
   App.asking "REPL"
@@ -313,7 +520,8 @@ def repl : App :=
          LeanMachine open. A line is commands, or a term to evaluate. `world` is the \
          desktop when you press Enter, its apps in `(← world).catalog`; `launch app` \
          opens an app. Ctrl+C stops a run. Up, Down: history. Tab completes a name. \
-         Ctrl+V pastes, lines and all; Shift+Enter starts a new line."] } : Repl)
-    Repl.step Repl.view (size := (560, 300))
+         Ctrl+V pastes, lines and all; Shift+Enter starts a new line. A drag selects; \
+         Ctrl+C copies it."] } : Repl)
+    Repl.step Repl.view (size := replSize)
 
 end LeanMachine

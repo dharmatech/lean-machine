@@ -177,6 +177,19 @@ a reload (Ctrl+C stops it); then a cut, and what it copied pasted at
 the end of the file. On the desktop, lines 12 to 18 of Clock.lean
 selected by a drag and copied through the loop (`copy-editor.png`).
 
+Then selecting and copying in the REPL, alone, its lines evaluated at
+once: it prints what drags select over `144`, over part of a line
+entered, from that line's prompt to the end of its output, over a
+block of two lines alone and among the entries around it, over a list
+that wraps onto two rows (one line), from the end of the list into the
+line being typed, and from the last line entered to below the rows. It
+prints what Ctrl+C and Ctrl+Shift+C ask for with something selected
+and with nothing, what typing does to a selection, and Ctrl+C twice
+with a run going: a copy, then a stop. On the desktop, three lines are
+typed into the REPL, a drag goes from `144` to the end of the list
+(`copy-repl.png`), and Ctrl+C asks for a copy; again, it asks for
+nothing, and clears the line.
+
 Then reloading. It reloads each app's file in the desktop's Lean three
 times and prints how long each took, what Lean said and the apps it
 found; tries files it can't reload (Desktop.lean and Main.lean, which

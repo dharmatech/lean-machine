@@ -22,6 +22,15 @@ first or the last, they go through earlier lines as usual. Enter
 evaluates all of it, and an error says which line it's on (`line 2,
 col 2`).
 
+Drag over what the REPL shows to select it, and Ctrl+C (or
+Ctrl+Shift+C) copies it, for a paste here or in any other program. A
+line that wraps comes out as one line. Part of a line entered comes
+as you wrote it, so it pastes back as it was; a stretch past one entry
+brings the `> ` prompts along, so it reads as the REPL showed it.
+Copying ends the selection, and with nothing selected Ctrl+C stops a
+run or clears the line, as before. For now, only what's in view can be
+selected: the REPL doesn't scroll back yet.
+
 Each REPL has its own Lean, kept in its state, so undo takes back
 definitions too. In a REPL, `world` is the desktop as it was when Enter
 was pressed (`(·.windows.map (·.title)) <$> world`), and `launch app`

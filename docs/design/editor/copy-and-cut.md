@@ -18,6 +18,9 @@ selected and stops a reload when nothing is. Ctrl+Shift+C only copies,
 for when you want to copy during a reload. Ctrl+Shift and a letter are
 otherwise the desktop's, but C isn't one of its letters.
 
+The REPL copies the same way, but ends its selection when it does
+([Copying from the REPL](../lean/copying-from-the-repl.md)).
+
 Undo takes back what a cut did to the file, like any edit, but not the
 clipboard: what was copied stays there.
 

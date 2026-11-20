@@ -138,6 +138,7 @@ def pastedLines (s : String) : List String :=
 /-! ## Colours and rows -/
 
 def plainRgb : UInt32 := 0xc0caf5
+def selectedRgb : UInt32 := 0x2e3c64  -- behind what's selected, in the editor and the REPL
 
 -- Tokyo Night's colours for Lean's tokens.
 def TokenKind.rgb : TokenKind → UInt32

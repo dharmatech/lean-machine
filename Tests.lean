@@ -11,6 +11,7 @@ import Tests.Editor
 import Tests.Paste
 import Tests.Select
 import Tests.Copy
+import Tests.ReplCopy
 import Tests.Reload
 import Tests.Runs
 import Tests.Masking
@@ -39,6 +40,7 @@ def all (c : Canvas) (svc : Services) : IO Unit := do
   testPaste c svc
   testSelect c svc
   testCopy c svc
+  testReplCopy c svc
   testReload c svc
   testRuns c svc
   testMasking

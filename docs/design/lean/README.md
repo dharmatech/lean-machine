@@ -8,6 +8,7 @@
 - [A value that carries its functions](value-carries-functions.md)
 - [A REPL asks for its Lean](repl-asks-for-lean.md)
 - [The REPL's line holds several](several-lines.md)
+- [Copying from the REPL](copying-from-the-repl.md)
 - [Reading an environment from two threads](environment-two-threads.md)
 
 [↑ Design](../README.md)

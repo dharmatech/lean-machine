@@ -92,7 +92,8 @@ pure C functions, and the masking test's hooks into runs.cpp,
   (`Offer`, `wordBefore`, `commonPrefix`), drawn in columns; pasted
   text tidied into lines (`pastedLines`); moves in a `Line` that holds
   several, "\n" between them (`lineStart`, `lineEnd`, `up`, `down`);
-  and how far in Enter starts a new line (`indentAfter`).
+  and how far in Enter starts a new line (`indentAfter`); and the
+  colour behind what's selected (`selectedRgb`).
 - `Apps/Editor.lean`: an editor of the desktop's Lean files. Its file
   is a `Buffer`: the lines above the cursor's (nearest first), the
   cursor's `Line`, and the lines below. Each line is `Lexed`: its text,
@@ -138,7 +139,7 @@ pure C functions, and the masking test's hooks into runs.cpp,
   between them, from a paste or Shift+Enter; Up and Down move among
   them, and from the first or last walk the history and come back to
   the line being typed. Each of its lines starts its own rows
-  (`promptRows`, `promptCursor`)
+  (`spannedRows`, `promptCursor`)
   ([The REPL's line holds several](lean/several-lines.md)). The transcript is a list, newest first, and the view
   cuts only the newest entries into rows, as many as fill the window;
   long lines wrap at the window's width in columns. Rows start at the
@@ -153,6 +154,15 @@ pure C functions, and the masking test's hooks into runs.cpp,
   asks the `Env` what it could become, inserts as much as they all
   share, and keeps the rest as an `Offer` drawn under the line, in
   columns, without the namespace typed, until the line changes.
+  The view and the step share one layout (`Repl.layout`), its rows
+  each with what they show of an entry or the line (`Span`), from the
+  body's size the REPL keeps from the last `resize`. A press and a
+  drag select between two places (`Spot`: a part, the entries counted
+  from the oldest, then the line, and a character in it), found by
+  `pointAt`; Ctrl+C asks for what's selected to be copied
+  (`Repl.selected`, `copy`) and ends the selection, and with nothing
+  selected stops a run or clears the line
+  ([Copying from the REPL](lean/copying-from-the-repl.md)).
 - `Apps/Placeholder.lean`: stands in for apps not written yet. A click
   drops a dot where it lands; it shows what was typed into it, the
   last key it heard, and its size beside the size it heard.
@@ -449,6 +459,11 @@ pure C functions, and the masking test's hooks into runs.cpp,
     for, with a selection, without one and during a reload; a cut
     pasted elsewhere; and lines of Clock.lean copied through the loop
     ([Copy and cut are requests](editor/copy-and-cut.md)).
+  - `ReplCopy.lean`: `testReplCopy`: drags over a REPL alone, within
+    an entry, past one, over a line that wraps and below the rows, and
+    what Ctrl+C and Ctrl+Shift+C ask for, with a run going and not;
+    then a drag over the desktop's REPL and Ctrl+C
+    ([Copying from the REPL](lean/copying-from-the-repl.md)).
   - `Reload.lean`: `testReload`, which runs the phases in `Reload/`
     in turn ([Reloading](reloading/README.md)). `Kit.lean` has what
     they share: `reloadNow` (a file reloaded on the test's thread),

@@ -645,7 +645,6 @@ def Lexed.mark? (l : Lexed) : Option UInt32 :=
   else if is (· matches .warning _) then some (Said.rgb (.warning ""))
   else if l.said.isEmpty then none else some (Said.rgb (.info ""))
 def hereRgb : UInt32 := 0x1f2335    -- behind the cursor's line
-def selectedRgb : UInt32 := 0x2e3c64  -- behind what's selected
 def statusRgb : UInt32 := 0x16161e
 
 -- A line of the file from column `left`, `cols` of it, coloured by its

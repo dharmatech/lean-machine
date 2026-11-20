@@ -61,7 +61,7 @@ To paste, copy text in any other program, then press Ctrl+V (or
 Ctrl+Shift+V, or Shift+Insert) in Lean Machine: the focused window gets
 the text. The editor and the REPL take it. One Ctrl+Shift+Z takes a
 paste back, and leaves what you typed before it. Text you copy in the
-editor (Ctrl+C) pastes in other programs too
+editor or the REPL (Ctrl+C) pastes in other programs too
 ([A paste is an event the loop makes](../design/drawing/paste-is-an-event.md)).
 
 F11 puts the Lean Machine window in full screen: it fills your screen,
