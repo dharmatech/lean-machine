@@ -9,7 +9,8 @@ and a move takes a line from one list to the other. Each line keeps its
 tokens and where the next line starts (in code, a comment or a string),
 so a comment that spans lines is coloured as one, and an edit reads
 again only its own line and the lines below that start differently now.
-Ctrl+S saves and Ctrl+O goes back to the list.
+Ctrl+S saves and Ctrl+O goes back to the list. A paste (Ctrl+V: the
+loop reads the clipboard) goes in at the cursor as lines.
 
 Ctrl+R reloads the apps the file defines: the desktop's Lean elaborates
 the file as it is in the editor, saved or not, and if Lean finds no
@@ -108,6 +109,20 @@ def enter (b : Buffer) : Buffer :=
            line := { before := pad.toList.reverse, after := b.line.after },
            row := b.row + 1 }
 
+-- A paste, as lines (`pastedLines`): the first goes in at the cursor,
+-- and each after it starts a new line, the last one before what was
+-- after the cursor, with the cursor after it. No indent is added: the
+-- lines keep their own.
+def paste (b : Buffer) : List String → Buffer
+  | [] => b
+  | [l] => { b with line := b.line.insert l }
+  | first :: rest =>
+    let before := String.ofList b.line.before.reverse ++ first
+    let between := (rest.dropLast.reverse.map fun l => ({ text := l } : Lexed))
+    { b with above := between ++ { b.here with text := before } :: b.above,
+             line := { before := (rest.getLastD "").toList.reverse, after := b.line.after },
+             row := b.row + rest.length }
+
 -- Backspace at the start of a line joins it to the line above.
 def backspace (b : Buffer) : Buffer :=
   if b.col > 0 then { b with line := b.line.backspace } else
@@ -157,13 +172,15 @@ def relex (env : Env) (b : Buffer) : Buffer :=
   let here := lexed env b.carryIn b.line.text
   { b with here, below := again env here.carry b.below }
 
--- After Enter: the line above, which the cursor left, and the rest.
-def relexAbove (env : Env) (b : Buffer) : Buffer :=
-  match b.above with
-  | l :: rest =>
-    let c := (rest.head?.map (·.carry)).getD .code
-    relex env { b with above := lexed env c l.text :: rest }
-  | [] => relex env b
+-- After Enter or a paste: the `n` lines above that it made, the
+-- nearest last, and the rest.
+def relexAbove (n : Nat) (env : Env) (b : Buffer) : Buffer :=
+  let rest := b.above.drop n
+  let c := (rest.head?.map (·.carry)).getD .code
+  let (made, _) := (b.above.take n).reverse.foldl (init := ([], c)) fun (ls, c) l =>
+    let l := lexed env c l.text
+    (l :: ls, l.carry)
+  relex env { b with above := made ++ rest }
 
 -- Every line, from the top: once the editor has its Lean, or a file.
 def lexAll (env : Env) (b : Buffer) : Buffer :=
@@ -359,7 +376,7 @@ def editKey (e : Editor) (k : Key) (m : Mods) : Option (Editor × List Request) 
     let page := e.rows - 1
     let e := e'
     match k with
-    | .enter => some (e.edit Buffer.enter Buffer.relexAbove, [])
+    | .enter => some (e.edit Buffer.enter (Buffer.relexAbove 1), [])
     | .backspace => some (e.edit Buffer.backspace, [])
     | .delete => some (e.edit Buffer.delete, [])
     | .tab => some (e.tab, [])
@@ -477,6 +494,14 @@ def heard (e : Editor) : AppEvent → Option (Editor × List Request)
     match e.path with
     | some _ => some ((e.edit fun b => { b with line := b.line.insert s }).follow, [])
     | none => some ({ e with filter := e.filter.insert s, pick := 0 }, [])
+  -- A paste goes in the file as lines, or its first line in what's
+  -- typed to choose a file.
+  | .paste s =>
+    let ls := pastedLines s
+    if ls == [""] then none else
+    match e.path with
+    | some _ => some ((e.edit (·.paste ls) (Buffer.relexAbove (ls.length - 1))).follow, [])
+    | none => some ({ e with filter := e.filter.insert (ls.headD ""), pick := 0 }, [])
   | .key k m =>
     match e.path with
     | some _ => (e.editKey k m).map fun (e, asks) => (if e.path.isSome then e.follow else e, asks)

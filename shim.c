@@ -225,6 +225,8 @@ extern const char *SDL_GetError(void);
 extern bool SDL_StartTextInput(SDL_Window *win);
 extern uint16_t SDL_GetModState(void);
 extern bool SDL_PushEvent(void *event);
+extern char *SDL_GetClipboardText(void);
+extern void SDL_free(void *mem);
 
 #define SDL_INIT_VIDEO 0x20u
 #define SDL_WINDOW_FULLSCREEN 0x1u
@@ -311,6 +313,18 @@ LEAN_EXPORT lean_obj_res sv_host_present(b_lean_obj_arg c, lean_obj_arg io) {
   SDL_RenderTexture(host_renderer, host_texture, NULL, NULL);
   SDL_RenderPresent(host_renderer);
   return unit();
+}
+
+// The clipboard's text, as UTF-8 (SDL gives "" if there's none, and the
+// string is ours to free). Wayland lets only the window with the
+// keyboard's focus read it, which the window is when a key pastes.
+// Empty before the window opens, as in `--test`.
+LEAN_EXPORT lean_obj_res sv_host_clipboard(lean_obj_arg io) {
+  if (!host_opened) return lean_io_result_mk_ok(lean_mk_string(""));
+  char *text = SDL_GetClipboardText();
+  lean_object *s = lean_mk_string(text ? text : "");
+  SDL_free(text);
+  return lean_io_result_mk_ok(s);
 }
 
 // A `RawEvent` (Host.lean): [kind, a, b, c, d] and a string. Lean lays out

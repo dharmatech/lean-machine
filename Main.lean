@@ -50,6 +50,13 @@ partial def run (c : Canvas) (svc : Services) (d : Desktop) (runs : Runs)
       if d.now.menu.isSome then (d, runs) ← feed svc d runs [.key .escape m]
       else if (← Host.fullscreen) then Host.setFullscreen false
       else quit := true
+    -- A paste key: the focused app hears what's on the clipboard, if
+    -- there's text on it, and not the key.
+    | some (.key k m) =>
+      if pasteKey k m then
+        let s ← Host.clipboard
+        unless s.isEmpty do (d, runs) ← feed svc d runs [.paste s]
+      else (d, runs) ← feed svc d runs [.key k m]
     | some e => (d, runs) ← feed svc d runs [e]
     | none => pure ()
     raw ← Host.event 0

@@ -139,6 +139,9 @@ inductive AppEvent where
   | motion (x y : Float)
   | key (k : Key) (mods : Mods)
   | text (s : String)      -- typed: a character, or what an input method made
+  -- Pasted: the clipboard's text, as a paste key found it. It may span
+  -- lines, end lines with "\r\n", and have tabs (`pastedLines` tidies it).
+  | paste (s : String)
   | tick (t : TimeOfDay)   -- many times a second, to every app
   | done (tag : Nat) (outcome : Outcome) (ms : Nat)  -- a run it asked for ended
   -- The wheel turned with the pointer at (x, y): `dy` steps away from

@@ -52,6 +52,10 @@ instance : Nonempty Canvas := CanvasPointed.property
 -- Ends the loop's wait for events. Any thread may call it: a run calls it
 -- when it ends. Does nothing before `Host.open`.
 @[extern "sv_host_wake"] opaque Host.wake : IO Unit
+-- The text on the clipboard, the one Ctrl+C and Ctrl+V use in other
+-- programs: empty if there's none, or none that is text, and before
+-- `Host.open`.
+@[extern "sv_host_clipboard"] opaque Host.clipboard : IO String
 -- An event as `sv_host_event` in shim.c hands it back: numbers
 -- [kind, a, b, c, d], and the text of a text event (empty for the others).
 -- Text can't travel in a `FloatArray`, and two fields keep one call per
@@ -71,6 +75,7 @@ def Key.ofSDL (code : UInt32) : Key :=
   | 9 => .tab
   | 8 => .backspace
   | 127 => .delete
+  | 0x40000049 => .insert
   | 27 => .escape
   | 0x4000004F => .right
   | 0x40000050 => .left

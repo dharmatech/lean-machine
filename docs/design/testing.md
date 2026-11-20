@@ -145,6 +145,16 @@ view of Editor.lean. Last, it times reading every line of Repl.lean, a
 keystroke in the middle of it, opening a comment at its top and closing
 it again, Down, and drawing an editor full of code.
 
+Then pasting, with the text handed over as a paste event. An editor
+alone takes two lines, with Windows line ends, a tab and a comment
+across them, at the start of a scratch file's second line, and prints
+each line with what it leaves open; then one line at the end of a
+line, and a paste into the list of files. A REPL alone takes a line
+with blank lines around it and evaluates it, and leaves a note for two
+lines. On the desktop, "1 + " typed and "2" pasted into the REPL, undone
+back to "1 + "; then a snippet pasted into Clock.lean
+(`paste-editor.png`), its `•` gone after undo.
+
 Then reloading. It reloads each app's file in the desktop's Lean three
 times and prints how long each took, what Lean said and the apps it
 found; tries files it can't reload (Desktop.lean and Main.lean, which

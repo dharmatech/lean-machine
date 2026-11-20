@@ -113,6 +113,7 @@ inductive Event where
   | menu (x y : Float)        -- the right button: asks for the menu
   | key (k : Key) (mods : Mods)
   | text (s : String)
+  | paste (s : String)        -- from the loop: a paste key, and the clipboard's text
   | tick (t : TimeOfDay)      -- from the loop, not the host
   | frame (ms : Nat)          -- from the loop: 60 a second while an app animates
   | done (win tag : Nat) (outcome : Outcome) (ms : Nat)  -- from the loop: a run ended
@@ -219,6 +220,7 @@ def Win.toApp (w : Win) : Event → Option AppEvent
   | .motion x y => some (.motion (x - w.bodyX) (y - w.bodyY))
   | .key k m => some (.key k m)
   | .text s => some (.text s)
+  | .paste s => some (.paste s)
   | .tick t => some (.tick t)
   | .frame ms => some (.frame ms)
   | .done _ tag o ms => some (.done tag o ms)

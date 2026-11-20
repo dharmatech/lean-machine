@@ -25,7 +25,8 @@ pure C functions, and the masking test's hooks into runs.cpp,
   case, or Enter, the arrows, Home and the like), and `Mods`, the Ctrl,
   Shift and Alt held with it. `Key.show` writes one as "Ctrl+Shift+N".
   The desktop's own keys are Ctrl+Shift and a letter (`desktopKey`);
-  F11 (`Key.f11`) is the loop's.
+  F11 (`Key.f11`) and the paste keys (`pasteKey`: Ctrl+V,
+  Ctrl+Shift+V, Shift+Insert) are the loop's.
 - `App.lean`: an `App` is a value with a title, a `view` at a given
   size, a `step` that returns the app an event makes and the requests
   it makes then (`none`: no change, nothing asked), and the `size` a new
@@ -86,14 +87,17 @@ pure C functions, and the masking test's hooks into runs.cpp,
 - `Text.lean`: what the REPL and the editor share: `Line`, a line
   being edited, as the characters before the cursor (nearest first)
   and those after it; Tokyo Night's colours for tokens; rows of
-  coloured runs (`runRows`), a `mono` each; and what Tab offers
-  (`Offer`, `wordBefore`, `commonPrefix`), drawn in columns.
+  coloured runs (`runRows`), a `mono` each; what Tab offers
+  (`Offer`, `wordBefore`, `commonPrefix`), drawn in columns; and
+  pasted text tidied into lines (`pastedLines`).
 - `Apps/Editor.lean`: an editor of the desktop's Lean files. Its file
   is a `Buffer`: the lines above the cursor's (nearest first), the
   cursor's `Line`, and the lines below. Each line is `Lexed`: its text,
   its tokens, and where it and the next line start (`Carry`). An edit
   reads the cursor's line again (`Buffer.relex`), and the lines below
-  only as far as they start differently now (`Buffer.again`). It asks
+  only as far as they start differently now (`Buffer.again`). Enter
+  and a paste (`Buffer.paste`) also read the lines they put above the
+  cursor (`Buffer.relexAbove`). It asks
   for the desktop's Lean and the list of files as it opens, as the REPL
   asks for its Lean; opening and saving are `read` and `write`
   requests, under a tag for each kind, and so is Ctrl+R's `reload`.
@@ -250,7 +254,7 @@ pure C functions, and the masking test's hooks into runs.cpp,
   open menu is kept on the screen. `World.commits` says which
   events start a step undo can return to: a press that does something
   (not one that only closes the menu or misses the taskbar's buttons),
-  a reload, and Ctrl+Shift+M and Ctrl+Shift+H.
+  a reload, Ctrl+Shift+M and Ctrl+Shift+H, and a paste.
 - `Desktop.lean`: `Desktop` is the world now and every world before it;
   undo (Ctrl+Shift+Z) takes the previous one, apps' states included,
   on the screen there is now (`World.onScreen`).
@@ -274,7 +278,8 @@ pure C functions, and the masking test's hooks into runs.cpp,
   over everything, its item under the pointer lit.
 - `Host.lean`: the calls into `shim.c` (a canvas and one window, which
   `Host.open` makes resizable down to a least size, and which
-  `Host.setFullscreen` puts in full screen or takes out),
+  `Host.setFullscreen` puts in full screen or takes out, and
+  `Host.clipboard`, the clipboard's text),
   `Event.decode` for the events the shim hands back as a `RawEvent` (a
   press brings SDL's count of clicks in a row; the
   right button is `Event.menu`; SDL's keycodes and modifier bits become a
@@ -358,7 +363,9 @@ pure C functions, and the masking test's hooks into runs.cpp,
   changed ([A resized window draws on a new
   canvas](drawing/new-canvas.md)). F11 puts the window in full screen
   or takes it out; Esc closes the menu, takes the window out of full
-  screen, or quits. Also `main`, which runs the loop, or
+  screen, or quits; a paste key reads the clipboard, and the focused
+  app hears `paste` with its text
+  ([A paste is an event the loop makes](drawing/paste-is-an-event.md)). Also `main`, which runs the loop, or
   `Tests.all` for `--test`, or `Boids.bench` (`Apps/Boids/Bench.lean`)
   for `--bench`.
 - `Tests.lean`: `Tests.all`, which runs the test in each module of
@@ -411,6 +418,10 @@ pure C functions, and the masking test's hooks into runs.cpp,
     line before left open, an editor alone on a scratch file, then on
     the desktop with Clock.lean, and what it costs
     ([The editor](editor/README.md)).
+  - `Paste.lean`: `testPaste`: text pasted into an editor alone, its
+    list of files and a REPL alone, then into the desktop's REPL and
+    Clock.lean, each undone
+    ([A paste is an event the loop makes](drawing/paste-is-an-event.md)).
   - `Reload.lean`: `testReload`, which runs the phases in `Reload/`
     in turn ([Reloading](reloading/README.md)). `Kit.lean` has what
     they share: `reloadNow` (a file reloaded on the test's thread),
@@ -441,7 +452,8 @@ pure C functions, and the masking test's hooks into runs.cpp,
     runs.cpp's, for this test.
 - `shim.c`: Cairo draws into an image in memory, and SDL3 shows it in
   one resizable window and hands back events, text input included, the
-  wheel, the window resized, and a wake (an SDL user event). The
+  wheel, the window resized, and a wake (an SDL user event), and reads
+  the clipboard's text. The
   texture it shows is made again when the canvas is a new size. No GPU
   in the design.
 - `runs.cpp`: stopping a run. A run's thread is inside a guard

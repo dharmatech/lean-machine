@@ -7,7 +7,8 @@ of its own, and what Lean said goes in the transcript when it comes back,
 with the REPL's Lean after the line. That Lean is a value in the REPL's
 state, so each REPL has its own, and undo takes definitions back with
 the rest. The line can be edited meanwhile, and Ctrl+C stops the run. Up
-and Down recall earlier lines. The line, and every line entered, is
+and Down recall earlier lines, and a paste of one line (Ctrl+V) goes in
+the line. The line, and every line entered, is
 coloured by the tokens the REPL's Lean reads in it, and Tab completes
 the name before the cursor from the names that Lean has. Pure: the REPL
 only asks, and its Lean is a value with pure functions for both.
@@ -164,6 +165,15 @@ def tab (r : Repl) : Option Repl := do
 -- An edit or a key that isn't Tab takes the offer away.
 def heard (r : Repl) : AppEvent → Option (Repl × List Request)
   | .text s => some ({ r with offer := none }.edit (·.insert s), [])
+  -- A paste of one line goes in the line, like typing; blank lines
+  -- around it don't count. Several lines wait for a REPL that takes them.
+  | .paste s =>
+    let blank (l : String) := l.trimAscii.isEmpty
+    match ((pastedLines s).dropWhile blank).reverse.dropWhile blank |>.reverse with
+    | [] => none
+    | [l] => some ({ r with offer := none }.edit (·.insert l), [])
+    | ls => some ({ r with transcript := .note s!"pasted {ls.length} lines: the REPL takes \
+        one line at a time for now, so nothing went in" :: r.transcript }, [])
   | .key .tab m => if m == {} then (r.tab).map (·, []) else none
   | .key .enter _ => { r with offer := none }.enter
   | .key (.char 'c') m =>
@@ -252,7 +262,8 @@ def repl : App :=
     ({ transcript := [.note "Lean, with Init and the desktop's modules but its apps, \
          LeanMachine open. A line is commands, or a term to evaluate. `world` is the \
          desktop when you press Enter, its apps in `(← world).catalog`; `launch app` \
-         opens an app. Ctrl+C stops a run. Up, Down: history. Tab completes a name."] } : Repl)
+         opens an app. Ctrl+C stops a run. Up, Down: history. Tab completes a name. \
+         Ctrl+V pastes a line."] } : Repl)
     Repl.step Repl.view (size := (560, 300))
 
 end LeanMachine

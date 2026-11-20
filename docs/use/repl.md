@@ -11,7 +11,8 @@ it, errors in red.
 
 Click in the REPL and type; Left, Right, Home, End, Backspace
 and Delete edit the line, and Up and Down go back and forth through
-earlier lines.
+earlier lines. Ctrl+V pastes a line you copied elsewhere into the line;
+a copy of several lines isn't taken yet, and the REPL says so.
 
 Each REPL has its own Lean, kept in its state, so undo takes back
 definitions too. In a REPL, `world` is the desktop as it was when Enter

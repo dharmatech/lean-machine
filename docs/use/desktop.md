@@ -57,6 +57,12 @@ stall for a second or two before the window catches up; a slower drag,
 maximizing and F11 aren't affected ([A long, fast resize stalls on
 Wayland](../design/drawing/wayland-resize-stall.md)).
 
+To paste, copy text in any other program, then press Ctrl+V (or
+Ctrl+Shift+V, or Shift+Insert) in Lean Machine: the focused window gets
+the text. The editor and the REPL take it. One Ctrl+Shift+Z takes a
+paste back, and leaves what you typed before it
+([A paste is an event the loop makes](../design/drawing/paste-is-an-event.md)).
+
 F11 puts the Lean Machine window in full screen: it fills your screen,
 with no frame or title, and the desktop fits itself to it as it does
 to any size. F11 again, or Esc, takes it out. Apps never hear F11.

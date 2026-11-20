@@ -261,6 +261,7 @@ def World.stepWindows (world : World) : Event → World
     else if desktopKey 'h' k m then world.minimize world.focus
     else world.toFocus (.key k m)
   | .text s => world.toFocus (.text s)
+  | .paste s => world.toFocus (.paste s)
   -- The wheel goes to the window under the pointer, focused or not.
   | .wheel x y dy =>
     match world.hit x y with
@@ -298,7 +299,8 @@ def World.takeAsked (world : World) : World × List Asked :=
 -- Whether `e` starts a step undo can return to. A press does, unless it
 -- only closes the menu or misses the taskbar's buttons, and so does a
 -- reload, so undo brings the old apps back, and with a window focused,
--- Ctrl+Shift+M and Ctrl+Shift+H; nothing else does.
+-- Ctrl+Shift+M, Ctrl+Shift+H and a paste, so undo takes the paste back
+-- alone; nothing else does.
 def World.commits (world : World) : Event → Bool
   | .press x y _ =>
     match world.menu with
@@ -306,6 +308,7 @@ def World.commits (world : World) : Event → Bool
     | none => !world.screen.inBar y || (world.taskbar.buttonAt x y).isSome
   | .reload .. => true
   | .key k m => (desktopKey 'm' k m || desktopKey 'h' k m) && world.focus != 0
+  | .paste _ => world.focus != 0
   | _ => false
 
 end LeanMachine

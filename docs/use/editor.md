@@ -11,6 +11,10 @@ lines at their ends, and Enter starts the new line as far in as the
 last, two more after `:=`, `do`, `where`, `=>`, `by`, `then` or
 `else`.
 
+Ctrl+V pastes text you copied elsewhere at the cursor, lines and all,
+with each tab as two spaces. In the list of files, it pastes into
+what's typed to narrow it.
+
 The file is coloured
 as the REPL colours a line, with comments and strings that span lines
 (`/- … -/`, the module's doc comment) coloured as one. Tab completes the

@@ -55,6 +55,21 @@ def toEnd (l : Line) : Line := { before := l.after.reverse ++ l.before, after :=
 
 end Line
 
+/-! ## Pasted text -/
+
+-- Pasted text as lines: ended by "\n", "\r\n" or "\r"; each tab two
+-- spaces, as Lean takes no tabs; other control characters dropped.
+-- Text that ends a line gives an empty last line.
+def pastedLines (s : String) : List String :=
+  let tidy (l : String) : String :=
+    l.toList.foldl (init := "") fun t c =>
+      if c == '\t' then t ++ "  " else if c.toNat < 32 || c.toNat == 127 then t else t.push c
+  (((s.replace "\r\n" "\n").replace "\r" "\n").splitOn "\n").map tidy
+
+#guard pastedLines "def x := 1" == ["def x := 1"]
+#guard pastedLines "a\r\n\tb\rc\n" == ["a", "  b", "c", ""]
+#guard pastedLines "a\x00b\x1b[0m" == ["ab[0m"]
+
 /-! ## Colours and rows -/
 
 def plainRgb : UInt32 := 0xc0caf5
