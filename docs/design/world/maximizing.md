@@ -3,7 +3,7 @@
 A maximized window keeps the `Rect` it came from (`Win.restore`), and
 while that is `some`, the window is maximized. `World.toggleMax`
 swaps the two: maximizing keeps the window's place and puts it at
-`desktopRect`, the screen above the bar; restoring puts it back. Both
+`Screen.desktop`, the screen above the bar; restoring puts it back. Both
 go through `World.place`, so the app hears its new size
 ([An app hears its size](app-size.md)). A reload into a maximized
 window keeps it maximized, with the same place to go back to, and so

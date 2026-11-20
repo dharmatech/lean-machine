@@ -21,7 +21,7 @@ def sampler : Picture :=
     .group [.rect 40 y 260 40 6 0x414868, .rect 42 (y + 2) 256 36 5 0x1a1b26,
             .textIn 54 y 236 40 16 a 0xc0caf5 s]
   .group [
-    .rect 0 0 screenW screenH 0 0x24283b,
+    .rect 0 0 ({} : Screen).w ({} : Screen).h 0 0x24283b,
     label 40 40 "line, 1 to 6 wide",
     .group ((List.range 6).map fun i =>
       let x := 40 + 36 * i.toFloat

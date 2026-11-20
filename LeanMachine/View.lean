@@ -99,11 +99,12 @@ def World.menuView (world : World) (m : Menu) : Picture :=
         [.textIn (m.x + 14) y (menuW - 28) itemH 14 .left
            (if on then 0xc0caf5 else 0x9aa5ce) app.title]))
 
--- Window `w`'s button on the taskbar, at `x` and `bw` wide: a dot, then
+-- Window `w`'s button on the taskbar, at `x` on a bar whose top is
+-- `barY`, and `bw` wide: a dot, then
 -- the title, cut to the button. The focused window's is filled and
 -- underlined, and one under the pointer filled more faintly; a minimized
 -- window's dot and title are dim.
-def Win.button (w : Win) (x bw : Float) (focused hovered : Bool) : Picture :=
+def Win.button (w : Win) (x barY bw : Float) (focused hovered : Bool) : Picture :=
   let fill : List Picture :=
     if focused then [.rect x (barY + 4) bw (barH - 8) 6 0x292e42,
                      .rect (x + 12) (barY + barH - 6) (bw - 24) 2 1 0xbb9af7]
@@ -122,16 +123,16 @@ def Win.button (w : Win) (x bw : Float) (focused hovered : Bool) : Picture :=
 def World.barView (world : World) (earlier : Nat) : Picture :=
   let bar := world.taskbar
   let hovered := ((bar.buttonAt world.mouseX world.mouseY).map (·.id)).getD 0
-  .group ([.rect 0 barY screenW barH 0 0x16161e] ++
-    bar.buttons.map (fun (w, x) => w.button x bar.w (w.id == world.focus) (w.id == hovered)) ++
-    [.textIn (screenW - countW - hintW) barY (countW + hintW - 14) barH barTextSize .right
+  .group ([.rect 0 bar.y world.screen.w barH 0 0x16161e] ++
+    bar.buttons.map (fun (w, x) => w.button x bar.y bar.w (w.id == world.focus) (w.id == hovered)) ++
+    [.textIn (world.screen.w - countW - hintW) bar.y (countW + hintW - 14) barH barTextSize .right
        0x7aa2f7 ((if bar.hint then barHint ++ "   ·   " else "") ++ s!"{earlier} earlier worlds")])
 
 def Desktop.view (d : Desktop) : Picture :=
   let world := d.now
   let lit := world.lit
   let boxes := world.boxesLit
-  .group ([.rect 0 0 screenW screenH 0 0x24283b] ++
+  .group ([.rect 0 0 world.screen.w world.screen.h 0 0x24283b] ++
     world.visible.map (fun w => w.view (w.id == world.focus)
       (match lit with
        | some (id, es) => if id == w.id then es else {}

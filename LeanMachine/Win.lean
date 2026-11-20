@@ -2,8 +2,9 @@ import LeanMachine.App
 
 /-! # Windows, and the screen they're on
 
-The screen's size and a window's parts (`titleH`, `frame`), the
-`Event`s the desktop hears, and `Win`, a window holding an app: where
+The `Screen`, whose size the world holds, a window's parts (`titleH`,
+`frame`), the `Event`s the desktop hears, and `Win`, a window holding
+an app: where
 it is, what a press on it finds (its title's boxes, its body, the
 `Edges` it grabs, which a drag moves with `Rect.drag`), and what its
 app hears, moved into the app's coordinates (`Win.hear`). `Win.place`
@@ -11,8 +12,6 @@ puts it at a `Rect`, and its app hears its new size. -/
 
 namespace LeanMachine
 
-def screenW : Float := 1280
-def screenH : Float := 800
 def barH : Float := 30        -- the taskbar, along the bottom
 def titleH : Float := 28
 def frame : Float := 3        -- a window's edge, beside and below its body
@@ -33,6 +32,19 @@ def dragSlop : Float := 4
 -- front of it, so that a press can still find the title.
 def titleKept : Float := 20
 
+-- The screen: the size of the host's window, which the world holds
+-- (`World.screen`). It starts at 1280 by 800.
+structure Screen where
+  w : Float := 1280
+  h : Float := 800
+  deriving BEq, Inhabited, Repr
+
+-- The top of the taskbar, along the bottom of the screen.
+def Screen.barY (s : Screen) : Float := s.h - barH
+
+-- Where a maximized window goes: all of the screen above the bar.
+def Screen.desktop (s : Screen) : Rect := ⟨0, 0, s.w, s.barY⟩
+
 -- The edges of a window a drag moves. A title moves all four, which
 -- moves the window; an edge moves one, and a corner two, which resizes it.
 structure Edges where
@@ -49,26 +61,23 @@ def Edges.any (e : Edges) : Bool := e.left || e.top || e.right || e.bottom
 -- cross).
 def between (lo hi v : Float) : Float := max lo (min hi v)
 
--- `r` with the edges `es` moved by (dx, dy). All four move it, anywhere
--- but down past `titleKept` above the bar. Fewer resize it, no smaller
--- than `minW` by `minH`, and an edge moved stops at the edge of the
--- desktop (or where it was, if it was past it).
-def Rect.drag (r : Rect) (es : Edges) (dx dy : Float) : Rect :=
+-- `r` with the edges `es` moved by (dx, dy), on `screen`. All four move
+-- it, anywhere but down past `titleKept` above the bar. Fewer resize it,
+-- no smaller than `minW` by `minH`, and an edge moved stops at the edge
+-- of the desktop (or where it was, if it was past it).
+def Rect.drag (r : Rect) (screen : Screen) (es : Edges) (dx dy : Float) : Rect :=
   if es == .all then
-    { r with x := r.x + dx, y := min (r.y + dy) (max r.y (screenH - barH - titleKept)) }
+    { r with x := r.x + dx, y := min (r.y + dy) (max r.y (screen.barY - titleKept)) }
   else
   let right := r.x + r.w
   let bottom := r.y + r.h
   let left := if es.left then between (min 0 r.x) (right - minW) (r.x + dx) else r.x
   let top := if es.top then between (min 0 r.y) (bottom - minH) (r.y + dy) else r.y
-  let right := if es.right then between (left + minW) (max screenW right) (right + dx)
+  let right := if es.right then between (left + minW) (max screen.w right) (right + dx)
     else right
-  let bottom := if es.bottom then between (top + minH) (max (screenH - barH) bottom) (bottom + dy)
+  let bottom := if es.bottom then between (top + minH) (max screen.barY bottom) (bottom + dy)
     else bottom
   ⟨left, top, right - left, bottom - top⟩
-
--- Where a maximized window goes: all of the screen above the bar.
-def desktopRect : Rect := ⟨0, 0, screenW, screenH - barH⟩
 
 inductive Event where
   | quit

@@ -22,7 +22,7 @@ def testMinimize (c : Canvas) : IO Unit := do
     let bar := d.now.taskbar
     ((bar.buttons.find? (·.1.title == title)).map fun (_, x) => x + bar.w / 2).getD 0
   let button (d : Desktop) (title : String) : List Event :=
-    click (buttonX d title) (barY + barH / 2)
+    click (buttonX d title) (d.now.screen.barY + barH / 2)
   let front (d : Desktop) : String := ((d.now.visible.getLast?.map (·.title))).getD "nothing"
   let state (d : Desktop) (title : String) : String :=
     match winTitled d title with
@@ -40,7 +40,7 @@ def testMinimize (c : Canvas) : IO Unit := do
   IO.println s!"minimizing; Notes' box: {state d "Notes"}; focus on {focused d}; \
     {d.past.length} earlier worlds; a press where it was finds \
     {((d.now.grabAt 880 580).map (·.1.title)).getD "nothing"}"
-  render c (d.step (.motion (buttonX d "Clock") (barY + 10))).view; shot c "taskbar.png"
+  render c (d.step (.motion (buttonX d "Clock") (d.now.screen.barY + 10))).view; shot c "taskbar.png"
   let d := steps d (button d "Notes")
   IO.println s!"  its button: {state d "Notes"}; in front {front d}; focus on {focused d}; \
     {d.past.length} earlier worlds"
@@ -67,16 +67,16 @@ def testMinimize (c : Canvas) : IO Unit := do
   IO.println s!"  its button again, then reloaded: {state d "Clock"}"
   let d := steps d (button d "Clock")
   IO.println s!"  its button: {state d "Clock"}"
-  let d := steps d (click (screenW - 35) 14)
+  let d := steps d (click (d.now.screen.w - 35) 14)
   IO.println s!"  its green box: {state d "Clock"}"
   -- Inspector maximized: its bottom edge, which can be grabbed from 4
   -- below it, is at the top of the bar. The pointer 2 below it, on
   -- Clock's button.
   let d := steps start (click 500 260 ++ [maximizeKey])
-  let d := steps d [.motion (buttonX d "Clock") (barY + 2)]
+  let d := steps d [.motion (buttonX d "Clock") (d.now.screen.barY + 2)]
   IO.println s!"Inspector maximized, the pointer 2 into the bar on Clock's button: lit \
     {(d.now.lit.map fun (id, es) => s!"window {id}, {es.show}").getD "nothing"}"
-  let d := steps d (click (buttonX d "Clock") (barY + 2))
+  let d := steps d (click (buttonX d "Clock") (d.now.screen.barY + 2))
   IO.println s!"  a click there: focus on {focused d}, in front {front d}; Inspector {state d "Inspector"}"
   -- Notes dragged 300 down, under the bar, then Clock's title clicked.
   let d := steps start (dragBy 600 350 0 300 ++ click 300 170)
@@ -96,7 +96,7 @@ def testMinimize (c : Canvas) : IO Unit := do
     IO.println s!"  {bar more}"
   let d := more
   let d := steps d (button d "REPL" ++ button d "REPL" ++ button d "Inspector" ++ button d "Inspector")
-  let d := d.step (.motion (buttonX d "Notes") (barY + 10))
+  let d := d.step (.motion (buttonX d "Notes") (d.now.screen.barY + 10))
   IO.println s!"  REPL and the first Inspector minimized: focus on {focused d}"
   render c d.view; shot c "taskbar-many.png"
   -- The pointer on the boxes of a title, which show what they do. The
@@ -110,7 +110,7 @@ def testMinimize (c : Canvas) : IO Unit := do
     edge above them: {boxesAt start 630 71}; on its right edge: {boxesAt start 644 84}"
   render c (start.step (.motion 610 84)).view; shot c "boxes.png"
   let d := steps start (click 885 354)
-  IO.println s!"  Notes maximized, the pointer on its green box: {boxesAt d (screenW - 36) 14}"
-  render c (d.step (.motion (screenW - 36) 14)).view; shot c "boxes-max.png"
+  IO.println s!"  Notes maximized, the pointer on its green box: {boxesAt d (d.now.screen.w - 36) 14}"
+  render c (d.step (.motion (d.now.screen.w - 36) 14)).view; shot c "boxes-max.png"
 
 end LeanMachine.Tests

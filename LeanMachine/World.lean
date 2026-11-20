@@ -48,6 +48,7 @@ structure World where
   mouseX : Float
   mouseY : Float
   outbox : List Asked := []  -- what apps asked for, newest first
+  screen : Screen := {}      -- the host's window
 
 def World.menuH (world : World) : Float :=
   menuHeadH + itemH * world.catalog.length.toFloat + 6
@@ -71,20 +72,20 @@ def World.animating (world : World) : Bool :=
 
 -- The frontmost window at (x, y), above the bar.
 def World.hit (world : World) (x y : Float) : Option Win :=
-  if inBar y then none else world.visible.reverse.find? (·.contains x y)
+  if world.screen.inBar y then none else world.visible.reverse.find? (·.contains x y)
 
 -- What a press at (x, y) above the bar lands on: the frontmost window
 -- it's in or near enough to grab an edge of, and the edges it grabs
 -- (none: inside, away from the edges).
 def World.grabAt (world : World) (x y : Float) : Option (Win × Edges) :=
-  if inBar y then none else
+  if world.screen.inBar y then none else
   world.visible.reverse.findSome? fun w =>
     let es := w.edgesAt x y
     if es.any || w.contains x y then some (w, es) else none
 
 -- The world's taskbar: a button for each of its windows.
 def World.taskbar (world : World) : Taskbar :=
-  .of world.windows
+  .of world.screen world.windows
 
 def World.raise (world : World) (w : Win) : List Win :=
   world.windows.filter (·.id != w.id) ++ [w]
@@ -111,7 +112,7 @@ def World.toggleMax (world : World) (id : Nat) : World :=
   world.each (·.id == id) fun w =>
     match w.restore with
     | some r => { w with restore := none }.place r
-    | none => { w with restore := some w.rect }.place desktopRect
+    | none => { w with restore := some w.rect }.place world.screen.desktop
 
 -- The frontmost window that isn't minimized, or 0 if there's none.
 def World.frontmost (world : World) : Nat :=
@@ -153,8 +154,8 @@ def World.fresh (world : World) (n : Nat) (app : App) (x y : Float)
   let w := bw + 2 * frame
   let h := bh + titleH + frame
   let win : Win := { id := n, app, w, h, origin,
-                     x := max 0 (min x (screenW - w)),
-                     y := max 0 (min y (screenH - barH - h)) }
+                     x := max 0 (min x (world.screen.w - w)),
+                     y := max 0 (min y (world.screen.barY - h)) }
   let (win, sized) := win.heed (.resize win.bodyW win.bodyH)
   let (win, timed) := win.heed (.tick world.time)
   (win, { world with outbox := (sized ++ timed).reverse ++ world.outbox })
@@ -192,13 +193,13 @@ def World.reload (world : World) (win : Nat) (name : Lean.Name) (app : App) : Wo
 
 -- The menu, open at (x, y) or as near as keeps it on the screen.
 def World.openMenu (world : World) (x y : Float) : World :=
-  { world with menu := some ⟨max 0 (min x (screenW - menuW)),
-                             max 0 (min y (screenH - barH - world.menuH))⟩ }
+  { world with menu := some ⟨max 0 (min x (world.screen.w - menuW)),
+                             max 0 (min y (world.screen.barY - world.menuH))⟩ }
 
 -- What an event does to the windows, with no menu in the way.
 def World.stepWindows (world : World) : Event → World
   | .press x y clicks =>
-    if inBar y then
+    if world.screen.inBar y then
       match world.taskbar.buttonAt x y with
       | some w => world.pressButton w
       | none => world
@@ -232,7 +233,7 @@ def World.stepWindows (world : World) : Event → World
       else
         let world := { world with drag := some { d with moved := true } }
         world.each (·.id == d.id) fun w =>
-          { w with restore := none }.place (d.start.drag d.edges (x - d.px) (y - d.py))
+          { w with restore := none }.place (d.start.drag world.screen d.edges (x - d.px) (y - d.py))
   | .release x y =>
     if world.drag.isSome then { world with drag := none }
     else world.toFocus (.release x y)
@@ -284,7 +285,7 @@ def World.commits (world : World) : Event → Bool
   | .press x y _ =>
     match world.menu with
     | some m => (world.itemAt? m x y).isSome
-    | none => !inBar y || (world.taskbar.buttonAt x y).isSome
+    | none => !world.screen.inBar y || (world.taskbar.buttonAt x y).isSome
   | .reload .. => true
   | .key k m => (desktopKey 'm' k m || desktopKey 'h' k m) && world.focus != 0
   | _ => false

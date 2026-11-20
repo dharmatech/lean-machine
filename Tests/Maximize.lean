@@ -21,7 +21,7 @@ def testMaximize (c : Canvas) (svc : Services) : IO Unit := do
   let d := steps start (click 885 354)
   IO.println s!"maximizing; Notes' box: {state d "Notes"}, \
     {(says d "Notes" "size:").quote}; {d.past.length} earlier worlds"
-  let d := steps d (click (screenW - 35) 14)
+  let d := steps d (click (d.now.screen.w - 35) 14)
   IO.println s!"  its box again: {state d "Notes"}, {(says d "Notes" "size:").quote}"
   -- Clock (220, 160) 236 × 290; its title is in front at (300, 170).
   let d := steps start (click 300 170 ++ [.press 300 170 2, .release 300 170])
@@ -42,13 +42,13 @@ def testMaximize (c : Canvas) (svc : Services) : IO Unit := do
   let d := steps d [.motion 640 114, .release 640 114]
   IO.println s!"  then 100 down: {state d "Inspector"}, {(says d "Inspector" "size:").quote} \
     (the pointer as far along its title as before)"
-  let d := steps d ([maximizeKey] ++ dragBy (screenW - 2) 400 (-300) 0)
+  let d := steps d ([maximizeKey] ++ dragBy (d.now.screen.w - 2) 400 (-300) 0)
   IO.println s!"  maximized again, its right edge -300: {state d "Inspector"}"
   -- A reload keeps a window maximized, and its place to go back to.
   let d := steps start (click 300 170 ++ [maximizeKey])
   let d := d.step (.reload 0 [(``clock, clock)])
   IO.println s!"  Clock maximized, then reloaded: {state d "Clock"}"
-  let d := steps d (click (screenW - 35) 14)
+  let d := steps d (click (d.now.screen.w - 35) 14)
   IO.println s!"  its box: {state d "Clock"}"
   -- An editor on Clock.lean, maximized.
   let d ← [Event.menu 300 100, menuItem 300 100 2, .text "apps/cl", .key .enter {}, maximizeKey].foldlM

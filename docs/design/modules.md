@@ -182,9 +182,11 @@ pure C functions, and the masking test's hooks into runs.cpp,
     flock after it ([How fast a step is](boids/step-speed.md),
     [The same bits as Chez](boids/same-bits-as-chez.md)). The REPLs'
     Lean doesn't import it.
-- `Win.lean`: a window and the screen it's on: the screen's size, a
-  window's parts (`titleH`, `frame`) and the least it can be resized to
-  (`minW`, `minH`), the `Event`s the desktop hears, and `Win`, a window
+- `Win.lean`: a window and the screen it's on: the `Screen`, whose size
+  the world holds, with the top of the bar (`Screen.barY`) and the
+  desktop above it (`Screen.desktop`), a window's parts (`titleH`,
+  `frame`) and the least it can be resized to (`minW`, `minH`), the
+  `Event`s the desktop hears, and `Win`, a window
   holding an app. A window knows what a press on it finds: its title
   (`Win.onTitle`) and the boxes on it (`Win.onClose`, `Win.onMax`,
   `Win.onMin`), its body (`Win.inBody`), and the `Edges` it grabs
@@ -194,11 +196,11 @@ pure C functions, and the masking test's hooks into runs.cpp,
   puts it at a `Rect`, and its app hears `resize` when its body's size
   changes.
 - `Taskbar.lean`: the taskbar along the bottom, in front of the windows
-  (`inBar`). `Taskbar.of` lays out a button for each of a list of
+  (`Screen.inBar`). `Taskbar.of` lays out a button for each of a list of
   windows, by id, and says whether the hint has room, guessing text
   widths (`approxW`); `Taskbar.buttonAt` is the window whose button is
-  at a point. It needs only the windows, so it comes before the world,
-  whose taskbar is `World.taskbar`.
+  at a point. It needs only the screen and the windows, so it comes
+  before the world, whose taskbar is `World.taskbar`.
 - `World.lean`: the windows, the pointer, the menu, and what an event
   does. Each window (`Win`) holds an app. `World.step : World → Event → World` moves, resizes,
   maximizes, restores, minimizes, raises, focuses and closes windows, passes ticks to every app,
@@ -220,7 +222,7 @@ pure C functions, and the masking test's hooks into runs.cpp,
   `World.place` is the one way a window changes place: its app hears
   `resize` when its body's size changes. A maximized window keeps where
   it was (`Win.restore`); `World.toggleMax` maximizes it to
-  `desktopRect` or restores it, from the green box on its title
+  `Screen.desktop` or restores it, from the green box on its title
   (`Win.onMax`), a double click on the title (`Event.press`'s `clicks`)
   or Ctrl+Shift+M, and a drag makes it a normal window again, a title
   drag at its old size under the pointer (`Win.dragFrom`).

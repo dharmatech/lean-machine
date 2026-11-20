@@ -64,7 +64,9 @@ partial def run (c : Canvas) (svc : Services) (d : Desktop) (runs : Runs)
   run c svc d runs (frames.map (· - 1)) due
 
 def main (args : List String) : IO Unit := do
-  let c ← Canvas.new screenW.toUInt32 screenH.toUInt32
+  -- The canvas and the window are the size of the start's screen.
+  let screen := start.now.screen
+  let c ← Canvas.new screen.w.toUInt32 screen.h.toUInt32
   -- The REPLs' Lean is imported in the background; the first line waits
   -- for it.
   let t0 ← IO.monoNanosNow
@@ -81,8 +83,8 @@ def main (args : List String) : IO Unit := do
     let _ ← IO.wait base
     Boids.bench
   | ["--frames", n] =>
-    Host.open "Lean Machine" screenW.toUInt32 screenH.toUInt32
+    Host.open "Lean Machine" screen.w.toUInt32 screen.h.toUInt32
     run c svc start {} n.toNat?
   | _ =>
-    Host.open "Lean Machine" screenW.toUInt32 screenH.toUInt32
+    Host.open "Lean Machine" screen.w.toUInt32 screen.h.toUInt32
     run c svc start {} none
