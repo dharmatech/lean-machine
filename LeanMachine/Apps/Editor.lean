@@ -10,7 +10,9 @@ tokens and where the next line starts (in code, a comment or a string),
 so a comment that spans lines is coloured as one, and an edit reads
 again only its own line and the lines below that start differently now.
 Ctrl+S saves and Ctrl+O goes back to the list. A paste (Ctrl+V: the
-loop reads the clipboard) goes in at the cursor as lines.
+loop reads the clipboard) goes in at the cursor as lines. Shift with a
+move, a drag, or Ctrl+A selects, from a mark to the cursor; what's
+typed or pasted replaces the selection, and Backspace takes it out.
 
 Ctrl+R reloads the apps the file defines: the desktop's Lean elaborates
 the file as it is in the editor, saved or not, and if Lean finds no
@@ -119,6 +121,30 @@ def paste (b : Buffer) : List String → Buffer
     { b with above := between ++ { b.here with text := before } :: b.above,
              line := { before := (rest.getLastD "").toList.reverse, after := b.line.after },
              row := b.row + rest.length }
+
+-- The text from `a` to `z`, each a line and a column, `a` first, taken
+-- out: the cursor goes to `a`, and what was after `z` follows it.
+def remove (b : Buffer) (a z : Nat × Nat) : Buffer :=
+  let b := b.goTo a.1 a.2
+  if z.1 == b.row then { b with line := { b.line with after := b.line.after.drop (z.2 - b.col) } }
+  else match b.below.drop (z.1 - b.row - 1) with
+    | last :: rest => { b with line := { b.line with after := last.text.toList.drop z.2 }, below := rest }
+    | [] => b
+
+-- The text from `a` to `z`, `a` first, its lines ended with "\n".
+def between (b : Buffer) (a z : Nat × Nat) : String :=
+  match (b.lines.drop a.1).take (z.1 + 1 - a.1) with
+  | [] => ""
+  | [l] => String.ofList ((l.toList.drop a.2).take (z.2 - a.2))
+  | first :: rest =>
+    "\n".intercalate (String.ofList (first.toList.drop a.2) :: rest.dropLast ++
+      [String.ofList ((rest.getLastD "").toList.take z.2)])
+
+#guard (Buffer.ofText "abc\ndef\nghi").between (0, 1) (2, 2) == "bc\ndef\ngh"
+#guard (Buffer.ofText "abc\ndef").between (1, 1) (1, 3) == "ef"
+#guard ((Buffer.ofText "abc\ndef\nghi").remove (0, 1) (2, 2)).text == "ai"
+#guard ((Buffer.ofText "abc\ndef\nghi").remove (1, 0) (1, 2)).text == "abc\nf\nghi"
+#guard ((Buffer.ofText "abc\ndef\nghi").remove (0, 3) (1, 0)).text == "abcdef\nghi"
 
 -- Backspace at the start of a line joins it to the line above.
 def backspace (b : Buffer) : Buffer :=
@@ -239,6 +265,10 @@ structure Editor where
   savingAt : Option Nat := none
   leaving : Bool := false        -- Ctrl+O pressed once with changes not saved
   note : String := ""            -- what the status line says last
+  -- Where the selection started, a line and a column: it runs from
+  -- there to the cursor. Shift and a move, a press, and Ctrl+A put it.
+  mark : Option (Nat × Nat) := none
+  dragging : Bool := false       -- a press in the file, not released yet
   -- The body's size, as the window last said it. The step needs it, to
   -- keep the cursor in view and to find the line a press lands on.
   size : Float × Float := editorSize
@@ -246,6 +276,23 @@ structure Editor where
 namespace Editor
 
 def changed (e : Editor) : Bool := e.edits != e.savedAt
+
+-- The cursor, as a line and a column.
+def cursorAt (e : Editor) : Nat × Nat := (e.buffer.row, e.buffer.col)
+
+-- The selection, its first end first: from the mark to the cursor,
+-- unless they're the same place.
+def selection (e : Editor) : Option ((Nat × Nat) × (Nat × Nat)) := do
+  let m ← e.mark
+  let c := e.cursorAt
+  if m == c then none
+  else some (if m.1 < c.1 || (m.1 == c.1 && m.2 < c.2) then (m, c) else (c, m))
+
+-- The text selected: empty if nothing is.
+def selected (e : Editor) : String :=
+  match e.selection with
+  | some (a, z) => e.buffer.between a z
+  | none => ""
 
 -- How many lines and columns of the file the editor shows, at its size;
 -- at least one of each.
@@ -281,7 +328,20 @@ def edit (e : Editor) (f : Buffer → Buffer) (relex : Env → Buffer → Buffer
     Editor :=
   let b := f e.buffer
   { e with buffer := (e.env.map (relex · b)).getD b, edits := e.edits + 1, goal := none,
-           offer := none, note := "" }
+           offer := none, note := "", mark := none }
+
+-- An edit that takes the selection out first, if there is one: what's
+-- typed, pasted or entered replaces it.
+def replacing (e : Editor) (f : Buffer → Buffer) : Buffer → Buffer :=
+  match e.selection with
+  | some (a, z) => fun b => f (b.remove a z)
+  | none => f
+
+-- Backspace and Delete: the selection taken out, if there is one, or `f`.
+def removing (e : Editor) (f : Buffer → Buffer) : Buffer → Buffer :=
+  match e.selection with
+  | some (a, z) => (·.remove a z)
+  | none => f
 
 -- A move: the cursor goes elsewhere, the file stays.
 def move (e : Editor) (f : Buffer → Buffer) : Editor :=
@@ -299,11 +359,12 @@ def opened (e : Editor) (path text : String) (ms : Nat) : Editor :=
   { e with path := some path, opening := none, env := e.base,
            buffer := (e.base.map (Buffer.lexAll · b)).getD b,
            edits := 0, savedAt := 0, top := 0, left := 0, goal := none, offer := none,
-           note := s!"read {b.count} lines in {ms} ms" }
+           mark := none, dragging := false, note := s!"read {b.count} lines in {ms} ms" }
 
 -- Back to the list of files, which is asked for again.
 def toFiles (e : Editor) : Editor × List Request :=
-  ({ e with path := none, buffer := {}, filter := {}, pick := 0, note := "", leaving := false },
+  ({ e with path := none, buffer := {}, filter := {}, pick := 0, note := "", leaving := false,
+             mark := none, dragging := false },
    [.list listTag "."])
 
 def save (e : Editor) : Option (Editor × List Request) := do
@@ -353,11 +414,22 @@ def tab (e : Editor) : Editor :=
     else e.edit fun b => { b with line := b.line.insert (if b.col % 2 == 0 then "  " else " ") }
   | none => e.edit fun b => { b with line := b.line.insert (if b.col % 2 == 0 then "  " else " ") }
 
--- Keys while a file is open.
+-- Keys that move the cursor: with Shift held, they select.
+def isMove : Key → Bool
+  | .left | .right | .up | .down | .home | .«end» | .pageUp | .pageDown => true
+  | _ => false
+
+-- Keys while a file is open. A move with Shift keeps the selection's
+-- start where it was, or puts it where the cursor was; a move without
+-- Shift ends the selection. Backspace and Delete take a selection out.
 def editKey (e : Editor) (k : Key) (m : Mods) : Option (Editor × List Request) :=
   let e' := { e with leaving := false }
+  let e' := if isMove k then { e' with mark := if m.shift then some (e.mark.getD e.cursorAt) else none }
+    else e'
   if m.ctrl then
     match k with
+    | .char 'a' => some ({ e'.move fun b => (b.goTo (b.count - 1) 0) |> fun b =>
+        { b with line := b.line.toEnd } with mark := some (0, 0) }, [])
     | .char 's' => e'.save
     | .char 'r' => e'.reload
     | .char 'c' =>
@@ -373,9 +445,9 @@ def editKey (e : Editor) (k : Key) (m : Mods) : Option (Editor × List Request) 
     let page := e.rows - 1
     let e := e'
     match k with
-    | .enter => some (e.edit Buffer.enter (Buffer.relexAbove 1), [])
-    | .backspace => some (e.edit Buffer.backspace, [])
-    | .delete => some (e.edit Buffer.delete, [])
+    | .enter => some (e.edit (e.replacing Buffer.enter) (Buffer.relexAbove 1), [])
+    | .backspace => some (e.edit (e.removing Buffer.backspace), [])
+    | .delete => some (e.edit (e.removing Buffer.delete), [])
     | .tab => some (e.tab, [])
     | .left => some (e.move Buffer.left, [])
     | .right => some (e.move Buffer.right, [])
@@ -421,7 +493,17 @@ def listTopFor (rows pick : Nat) : Nat := if pick + 2 < rows then 0 else pick + 
 
 def textX : Float := edPad + gutterCols.toFloat * monoAdvance edFont
 
--- Where a press lands: the line and column of the file, or the file shown.
+-- The line and column of the file at (x, y) in the body. Above or below
+-- the lines in view, the line just past them, so a drag there scrolls.
+def pointAt (e : Editor) (x y : Float) : Nat × Nat :=
+  let row := ((y - edPad) / edLineH).floor
+  let row := if row < 0 then e.top - min e.top 1
+    else min (e.top + e.rows) (e.top + row.toUInt64.toNat)
+  let col := ((x - textX) / monoAdvance edFont).round
+  (row, e.left + if col < 0 then 0 else col.toUInt64.toNat)
+
+-- Where a press lands: the line and column of the file, where a
+-- selection starts, or the file shown.
 def pressed (e : Editor) (x y : Float) : Option (Editor × List Request) :=
   let row := ((y - edPad) / edLineH).floor
   if row < 0 then none else
@@ -429,9 +511,9 @@ def pressed (e : Editor) (x y : Float) : Option (Editor × List Request) :=
   match e.path with
   | some _ =>
     if row ≥ e.rows then none else
-    let col := ((x - textX) / monoAdvance edFont).round
-    let col := if col < 0 then 0 else col.toUInt64.toNat
-    some (e.move (·.goTo (e.top + row) (e.left + col)), [])
+    let (r, c) := e.pointAt x y
+    let e := e.move (·.goTo r c)
+    some ({ e with mark := some e.cursorAt, dragging := true }, [])
   | none =>
     -- Rows 0 and 1 are the heading and what's typed.
     if row < 2 then none else
@@ -487,9 +569,16 @@ def heard (e : Editor) : AppEvent → Option (Editor × List Request)
     let e := { e with size := (w, h) }
     some (if e.path.isSome then e.follow else e, [])
   | .press x y => (e.pressed x y).map fun (e, asks) => (e.follow, asks)
+  -- A drag from a press in the file selects to where the pointer is.
+  | .motion x y =>
+    if !e.dragging || e.path.isNone then none else
+    let (r, c) := e.pointAt x y
+    let e' := e.move (·.goTo r c)
+    if e'.cursorAt == e.cursorAt then none else some (e'.follow, [])
+  | .release _ _ => if e.dragging then some ({ e with dragging := false }, []) else none
   | .text s =>
     match e.path with
-    | some _ => some ((e.edit fun b => { b with line := b.line.insert s }).follow, [])
+    | some _ => some ((e.edit (e.replacing fun b => { b with line := b.line.insert s })).follow, [])
     | none => some ({ e with filter := e.filter.insert s, pick := 0 }, [])
   -- A paste goes in the file as lines, or its first line in what's
   -- typed to choose a file.
@@ -497,7 +586,7 @@ def heard (e : Editor) : AppEvent → Option (Editor × List Request)
     let ls := pastedLines s
     if ls == [""] then none else
     match e.path with
-    | some _ => some ((e.edit (·.paste ls) (Buffer.relexAbove (ls.length - 1))).follow, [])
+    | some _ => some ((e.edit (e.replacing (·.paste ls)) (Buffer.relexAbove (ls.length - 1))).follow, [])
     | none => some ({ e with filter := e.filter.insert (ls.headD ""), pick := 0 }, [])
   | .key k m =>
     match e.path with
@@ -527,6 +616,7 @@ def Lexed.mark? (l : Lexed) : Option UInt32 :=
   else if is (· matches .warning _) then some (Said.rgb (.warning ""))
   else if l.said.isEmpty then none else some (Said.rgb (.info ""))
 def hereRgb : UInt32 := 0x1f2335    -- behind the cursor's line
+def selectedRgb : UInt32 := 0x2e3c64  -- behind what's selected
 def statusRgb : UInt32 := 0x16161e
 
 -- A line of the file from column `left`, `cols` of it, coloured by its
@@ -569,9 +659,23 @@ def viewFile (e : Editor) (w h : Float) : List Picture :=
   let adv := monoAdvance edFont
   let b := e.buffer
   let rows := e.inView
+  -- What's selected of line `n`, as columns in view: a line the
+  -- selection goes on past takes a column more, for its end.
+  let sel := e.selection
+  let selectedIn (n : Nat) (l : Lexed) (i : Nat) : List Picture :=
+    match sel with
+    | some (a, z) =>
+      if n < a.1 || n > z.1 then [] else
+      let lo := max e.left (if n == a.1 then a.2 else 0)
+      let hi := min (e.left + e.cols) (if n == z.1 then z.2 else l.text.length + 1)
+      if lo < hi then
+        [.rect (textX + adv * (lo - e.left).toFloat) (rowY i) (adv * (hi - lo).toFloat) edLineH 0
+          selectedRgb]
+      else []
+    | none => []
   let lineRows := rows.zipIdx.flatMap fun ((n, l), i) =>
     let y := rowY i + 14
-    (if n == b.row then [.rect 0 (rowY i) w edLineH 0 hereRgb] else []) ++
+    (if n == b.row then [.rect 0 (rowY i) w edLineH 0 hereRgb] else []) ++ selectedIn n l i ++
     [.mono edPad y edFont (l.mark?.getD (if n == b.row then 0x737aa2 else gutterRgb))
       (rightAligned (n + 1) (gutterCols - 1))] ++
     drawRow textX y (lexedRow l e.left e.cols)
@@ -610,7 +714,13 @@ def viewFile (e : Editor) (w h : Float) : List Picture :=
     rows.zipIdx.flatMap fun (row, i) => drawRow (edPad + 2) (y + 4 + edLineH * i.toFloat + 14) row
   let path := e.path.getD ""
   let state := if e.savingAt.isSome then "saving…" else if e.changed then "changed" else "saved"
-  let status := s!"{path}   {b.row + 1}:{b.col + 1}   {if e.note.isEmpty then state else e.note}"
+  let howMuch := match sel with
+    | some (a, z) => if a.1 == z.1 then s!" ({z.2 - a.2} selected)"
+                     else
+                       let n := z.1 - a.1 + if z.2 == 0 then 0 else 1
+                       s!" ({n} line{if n == 1 then "" else "s"} selected)"
+    | none => ""
+  let status := s!"{path}   {b.row + 1}:{b.col + 1}{howMuch}   {if e.note.isEmpty then state else e.note}"
   lineRows ++ cursorAt ++ said ++ offered ++
     [.rect 0 (h - edStatusH) w edStatusH 0 statusRgb,
      .mono edPad (h - 7) 13 (if e.changed then 0xe0af68 else 0x9aa5ce) status] ++

@@ -161,6 +161,15 @@ undone back to "1 + "; a snippet pasted into Clock.lean
 a `structure` and an `#eval` pasted and evaluated, and a `def` pasted
 with the cursor moved up into it (`paste-repl.png`).
 
+Then selecting in the editor, alone on a scratch file: it prints what's
+selected, and where the cursor is, after Shift with Right, Down, End
+and Up and Left from the end of a line; a move without Shift; text,
+Enter and a paste typed over a selection, and Backspace on it; Ctrl+A
+and Delete; a drag from a press, a motion after the release and a
+press. On the desktop it drags down seven lines of Clock.lean
+(`select-editor.png`), then from the same line to under the window,
+where five motions scroll it five lines.
+
 Then reloading. It reloads each app's file in the desktop's Lean three
 times and prints how long each took, what Lean said and the apps it
 found; tries files it can't reload (Desktop.lean and Main.lean, which

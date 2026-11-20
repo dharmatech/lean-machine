@@ -15,6 +15,12 @@ Ctrl+V pastes text you copied elsewhere at the cursor, lines and all,
 with each tab as two spaces. In the list of files, it pastes into
 what's typed to narrow it.
 
+To select, hold Shift while you move the cursor, drag over the text,
+or press Ctrl+A for the whole file. Drag past the top or bottom and the
+file scrolls as you move the pointer. The status line says how much is
+selected. Typing, Enter or Ctrl+V replace what's selected, Backspace
+and Delete take it out, and a move without Shift ends the selection.
+
 The file is coloured
 as the REPL colours a line, with comments and strings that span lines
 (`/- … -/`, the module's doc comment) coloured as one. Tab completes the

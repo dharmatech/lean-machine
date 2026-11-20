@@ -99,7 +99,13 @@ pure C functions, and the masking test's hooks into runs.cpp,
   reads the cursor's line again (`Buffer.relex`), and the lines below
   only as far as they start differently now (`Buffer.again`). Enter
   and a paste (`Buffer.paste`) also read the lines they put above the
-  cursor (`Buffer.relexAbove`). It asks
+  cursor (`Buffer.relexAbove`). The selection runs from a mark
+  (`Editor.mark`), put by Shift and a move, a press or Ctrl+A, to the
+  cursor; a drag moves the cursor to the pointer (`pointAt`). What's
+  typed, entered or pasted replaces it (`replacing`), Backspace and
+  Delete take it out (`removing`, `Buffer.remove`), and
+  `Buffer.between` reads it
+  ([Selecting is a mark and the cursor](editor/selecting.md)). It asks
   for the desktop's Lean and the list of files as it opens, as the REPL
   asks for its Lean; opening and saving are `read` and `write`
   requests, under a tag for each kind, and so is Ctrl+R's `reload`.
@@ -430,6 +436,11 @@ pure C functions, and the masking test's hooks into runs.cpp,
     recalled, and one taller than the view), then into the desktop's
     REPL and Clock.lean, each undone, and a block in the maximized REPL
     ([A paste is an event the loop makes](drawing/paste-is-an-event.md)).
+  - `Select.lean`: `testSelect`: Shift and the moves, Ctrl+A, typing,
+    Enter, a paste, Backspace and Delete over a selection, in an editor
+    alone; a drag, and on the desktop, a drag down Clock.lean and past
+    the bottom of its view
+    ([Selecting is a mark and the cursor](editor/selecting.md)).
   - `Reload.lean`: `testReload`, which runs the phases in `Reload/`
     in turn ([Reloading](reloading/README.md)). `Kit.lean` has what
     they share: `reloadNow` (a file reloaded on the test's thread),
