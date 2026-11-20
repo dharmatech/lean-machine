@@ -7,18 +7,23 @@ it. An entry is named by its place counted from the oldest, so a place
 stays put as entries come in below it, and the line comes after them
 all. A press puts both ends where it lands, a drag moves the second to
 the pointer, and what's selected runs between them, whichever comes
-first (`Repl.selection`).
+first (`Repl.selection`). A press on the line being edited also puts
+its cursor there (`Line.at`), so a click in it moves the cursor, and a
+drag from there selects and leaves the cursor where it pressed: the
+selection is for copying, and the cursor for typing.
 
 To find what a press is on, the step needs the view's rows, so the
 REPL keeps the body's size from the last `resize`, as the editor does,
 and the view and the step share one layout (`Repl.layout`). Each row
 knows what it shows of its part (`Span`): from which character to
 which, after how many columns of prompt, and whether one of the part's
-lines ends there. A press goes to the nearest place between two
-characters in its row (`pointAt`); on the row that says a run is
-going, to the end of the newest entry; on what Tab offered, to the end
-of the line; above the rows, to the start of the first, and below
-them, to the end of the last.
+lines ends there; and whether it's a row of the line, where a press
+moves the cursor. A press goes to the nearest place between two
+characters in its row (`hit`, `pointAt`); on the row that says a run
+is going, to the end of the newest entry; on what Tab offered, to the
+end of the line, without moving the cursor; above the rows, to the
+start of the first, and below them, to the end of the last, so a click
+below a short REPL puts the cursor at the line's end.
 
 What's copied reads as it was written, not as it was cut into rows: a
 line that wraps is one line (`Repl.selected`). As for the prompts:

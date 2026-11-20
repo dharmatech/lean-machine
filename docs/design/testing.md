@@ -188,7 +188,13 @@ and with nothing, what typing does to a selection, and Ctrl+C twice
 with a run going: a copy, then a stop. On the desktop, three lines are
 typed into the REPL, a drag goes from `144` to the end of the list
 (`copy-repl.png`), and Ctrl+C asks for a copy; again, it asks for
-nothing, and clears the line.
+nothing, and clears the line. Then clicks: in the REPL alone, after the
+`t` of a line being typed, and "x" typed there; before the second line
+of a block in the line, and "2 * " typed; a drag in the line, which
+selects and leaves the cursor where it pressed; a click on what Tab
+offered, which leaves the line and the offer; and a click below a
+lone line, which puts the cursor at its end. On the desktop, a click
+before `xyz` in "abc xyz" (`repl-click.png`) and "X " typed there.
 
 Then scrolling the REPL back. A REPL alone evaluates twenty lines, more
 than its view holds, and it prints the first and last rows shown, and

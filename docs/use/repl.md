@@ -11,7 +11,8 @@ it, errors in red.
 
 Click in the REPL and type; Left, Right, Home, End, Backspace
 and Delete edit the line, and Up and Down go back and forth through
-earlier lines.
+earlier lines. A click in the line puts the cursor there, and a click
+below it, at its end.
 
 Ctrl+V pastes what you copied elsewhere, lines and all: a `def` with a
 `where`, a `structure`, a few commands and an `#eval`. Shift+Enter

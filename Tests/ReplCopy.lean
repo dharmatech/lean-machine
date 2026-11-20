@@ -1,14 +1,16 @@
-import Tests.Kit
+import Tests.Paste
 
-/-! # `--test`: selecting and copying in the REPL
+/-! # `--test`: selecting, copying and clicking in the REPL
 
 A REPL alone, its lines evaluated at once: drags over an output, part
 of a line entered, a block of two lines, a list that wraps, and past
 one entry, where the prompts come along; a drag below the rows. What
 Ctrl+C and Ctrl+Shift+C ask for with a selection and without, with a
-run going and not, and a key that ends the selection. On the desktop,
-a drag over the REPL's transcript and Ctrl+C, which asks the loop to
-copy (docs/design/lean/copying-from-the-repl.md). -/
+run going and not, and a key that ends the selection. Clicks in the
+line, which move its cursor, a drag in it, and clicks on what Tab
+offered and below the rows. On the desktop, a drag over the REPL's
+transcript and Ctrl+C, which asks the loop to copy, and a click in its
+line (docs/design/lean/copying-from-the-repl.md). -/
 
 namespace LeanMachine
 
@@ -40,7 +42,7 @@ def replAt (r : Repl) (s : String) (k : Nat := 0) : Float × Float := Id.run do
   return (0, 0)
 
 def testReplCopy (c : Canvas) (svc : Services) : IO Unit := do
-  IO.println "selecting and copying in the REPL:"
+  IO.println "selecting, copying and clicking in the REPL:"
   let key (k : Key) : AppEvent := .key k {}
   let ctrlC : AppEvent := .key (.char 'c') { ctrl := true }
   let ctrlShiftC : AppEvent := .key (.char 'c') ctrlShift
@@ -103,5 +105,37 @@ def testReplCopy (c : Canvas) (svc : Services) : IO Unit := do
     {asked.map (·.request.show)}"
   let (_, asked) := (steps d [.key (.char 'c') { ctrl := true }]).takeAsked
   IO.println s!"    Ctrl+C again: {asked.map (·.request.show)}"
+  -- Clicks in the line move its cursor, and what's typed goes in there.
+  -- A drag in the line selects, and leaves the cursor where it pressed.
+  let clicked (r : Repl) (p : Float × Float) : IO Repl :=
+    [.press p.1 p.2, .release p.1 p.2].foldlM (hearNow svc) r
+  let cursor (r : Repl) := s!"{r.line.text.quote}, cursor at {r.line.cursor}"
+  let c1 ← clicked r (replAt r "> twice" 3)
+  IO.println s!"  a click after the t of twice: {cursor c1}; \"x\" typed: \
+    {cursor (← hearNow svc c1 (.text "x"))}"
+  let block ← [ctrlC, .paste "def f (n : Nat) :=\n  n + 1"].foldlM (hearNow svc) c1
+  let c2 ← clicked block (replAt block "n + 1")
+  IO.println s!"  a block in the line, a click before n + 1: cursor at {c2.line.cursor}; \
+    \"2 * \" typed: {(← hearNow svc c2 (.text "2 * ")).line.text.quote}"
+  let d2 ← drag block (replAt block "> def f" 6) (replAt block "> def f" 10)
+  IO.println s!"  a drag in the line: {d2.selected.quote}, cursor at {d2.line.cursor}"
+  let offered ← [ctrlC, .text "List.ma", key .tab].foldlM (hearNow svc) r
+  let o ← clicked offered (replAt offered "mapA")
+  IO.println s!"  a click on what Tab offered: {cursor o}, \
+    {if o.offer.isSome then "still offered" else "no offer"}"
+  let short ← [AppEvent.tick ⟨10, 8, 30⟩, .text "1 + 2", key .home].foldlM (hearNow svc) {}
+  IO.println s!"  a REPL with only its line, Home, then a click below it: \
+    {cursor (← clicked short (300, 250))}"
+  -- On the desktop: "abc xyz" typed into the REPL (one run, both
+  -- names), a click before `xyz`, and "X " typed there.
+  let d ← stepNow svc d (.text "abc xyz")
+  let some w := winTitled d "REPL" | throw (IO.userError "no REPL")
+  let some (x, y, _) := (w.app.view w.bodyW w.bodyH).monoSpots.find? (·.2.2 == "abc xyz")
+    | throw (IO.userError "no abc xyz")
+  let (x, y) := (w.bodyX + x + monoAdvance replFont * 4, w.bodyY + y - 4)
+  let d := steps d (click x y)
+  render c d.view; shot c "repl-click.png"
+  IO.println s!"  on the desktop, \"abc xyz\" typed, a click before xyz, \"X \" typed: \
+    {(replLine (steps d [.text "X "])).quote}"
 
 end LeanMachine.Tests

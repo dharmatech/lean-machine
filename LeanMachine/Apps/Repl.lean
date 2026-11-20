@@ -322,12 +322,13 @@ def Entry.rowCount (cols : Nat) (e : Entry) : Nat :=
 
 -- A row of the view: what it draws, and what it shows of the REPL's
 -- text, in which part; and for a row of an entry, which entry and which
--- of its rows.
+-- of its rows, or whether it's a row of the line being edited.
 structure Shown where
   row : Row
   part : Option Nat
   span : Span
   entryRow : Option (Nat × Nat) := none
+  inLine : Bool := false
 
 -- What the view shows at a width and height: its rows, top to bottom,
 -- the cursor's row among them and its column (none: scrolled out of
@@ -357,10 +358,10 @@ def Repl.layout (r : Repl) (w h : Float) : Layout :=
   -- Where the cursor is, among the rows of the line.
   let (cRow, cCol) := promptCursor cols s r.line.cursor
   let editing := (spannedRows cols s (tokenColours n r.tokens) prompt).map fun (row, span) =>
-    ({ row, part := none, span } : Shown)
+    ({ row, part := none, span, inLine := true } : Shown)
   let lineEnd : Span := { lo := n, hi := n }
   let editing := if cRow < editing.length then editing
-    else editing ++ [{ row := [], part := none, span := lineEnd }]
+    else editing ++ [{ row := [], part := none, span := lineEnd, inLine := true }]
   let count := r.transcript.length
   let status : List Shown := match r.waiting with
     | some w =>
@@ -535,19 +536,21 @@ end Repl
 
 namespace Repl
 
--- What a press at (x, y) in the body is on: the place between two
--- characters nearest it, in the row it's on. Above the rows, the start
--- of the first; below them, the end of the last.
-def pointAt (r : Repl) (x y : Float) : Spot :=
+-- What a press at (x, y) in the body is on: the row, and the place
+-- between two characters nearest it in that row. Above the rows, the
+-- start of the first; below them, the end of the last.
+def hit (r : Repl) (x y : Float) : Option (Shown × Spot) :=
   let l := r.layout r.size.1 r.size.2
   let i := ((y - replPad) / replLineH).floor
   let col := ((x - replPad) / monoAdvance replFont).round
   let (i, col) := if i < 0 then (0, 0)
     else if i.toUInt64.toNat ≥ l.rows.length then (l.rows.length - 1, l.cols)
     else (i.toUInt64.toNat, if col < 0 then 0 else col.toUInt64.toNat)
-  match l.rows[i]? with
-  | some v => { part := v.part, at_ := min v.span.hi (v.span.lo + (col - v.span.lead)) }
-  | none => { part := none, at_ := 0 }
+  l.rows[i]?.map fun v =>
+    (v, { part := v.part, at_ := min v.span.hi (v.span.lo + (col - v.span.lead)) })
+
+def pointAt (r : Repl) (x y : Float) : Spot :=
+  ((r.hit x y).map (·.2)).getD { part := none, at_ := 0 }
 
 -- Each part, oldest first: which, its text, and whether its lines are
 -- led by a prompt.
@@ -610,9 +613,10 @@ def keyed (r : Repl) : AppEvent → Option (Repl × List Request)
   | .key k _ => ({ r with offer := none }.editKey k).map (·, [])
   | _ => none
 
--- A press puts both ends of the selection where it lands, and a drag
--- moves the second to the pointer; above or below the rows, the view
--- scrolls a row for each motion. A key that does something ends the
+-- A press puts both ends of the selection where it lands, and on the
+-- line, its cursor there too; a drag moves the selection's second end
+-- to the pointer, and leaves the cursor; above or below the rows, the
+-- view scrolls a row for each motion. A key that does something ends the
 -- selection, and brings the view back to the newest rows; Ctrl+C copies
 -- the selection, and with nothing selected stops a run or clears the
 -- line. Ctrl+Shift+C only copies. The wheel, PageUp and PageDown scroll.
@@ -625,8 +629,9 @@ def heard (r : Repl) (e : AppEvent) : Option (Repl × List Request) :=
   | .key .pageUp m => if m == {} || m == { shift := true } then r.page true else none
   | .key .pageDown m => if m == {} || m == { shift := true } then r.page false else none
   | .wheel _ _ dy => some (r.wheel dy, [])
-  | .press x y =>
-    let s := r.pointAt x y
+  | .press x y => do
+    let (v, s) ← r.hit x y
+    let r := if v.inLine then { r with line := .at r.line.text s.at_, offer := none } else r
     some ({ r with selecting := some (s, s), dragging := true }, [])
   | .motion x y =>
     match r.selecting with

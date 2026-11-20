@@ -164,7 +164,7 @@ pure C functions, and the masking test's hooks into runs.cpp,
   something ([The REPL scrolls back to an entry and a row](lean/scrolling-back.md)). A press and a
   drag select between two places (`Spot`: a part, the entries counted
   from the oldest, then the line, and a character in it), found by
-  `pointAt`; Ctrl+C asks for what's selected to be copied
+  `hit` and `pointAt`, and a press on the line moves its cursor there; Ctrl+C asks for what's selected to be copied
   (`Repl.selected`, `copy`) and ends the selection, and with nothing
   selected stops a run or clears the line
   ([Copying from the REPL](lean/copying-from-the-repl.md)).
@@ -467,7 +467,8 @@ pure C functions, and the masking test's hooks into runs.cpp,
   - `ReplCopy.lean`: `testReplCopy`: drags over a REPL alone, within
     an entry, past one, over a line that wraps and below the rows, and
     what Ctrl+C and Ctrl+Shift+C ask for, with a run going and not;
-    then a drag over the desktop's REPL and Ctrl+C
+    clicks in the line, on what Tab offered and below the rows; then a
+    drag over the desktop's REPL and Ctrl+C, and a click in its line
     ([Copying from the REPL](lean/copying-from-the-repl.md)).
   - `ReplScroll.lean`: `testReplScroll`: a REPL alone scrolled by the
     wheel, a touchpad's halves, PageUp and PageDown, a run that ends
