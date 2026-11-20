@@ -39,6 +39,11 @@ structure Screen where
   h : Float := 800
   deriving BEq, Inhabited, Repr
 
+-- The least the host's window can be resized to: room on the bar for
+-- four buttons, and a desktop as tall as the REPL that opens at the
+-- start. The world takes any size; this keeps the desktop usable.
+def Screen.least : Screen := ⟨640, 400⟩
+
 -- The top of the taskbar, along the bottom of the screen.
 def Screen.barY (s : Screen) : Float := s.h - barH
 

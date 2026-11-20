@@ -271,12 +271,13 @@ pure C functions, and the masking test's hooks into runs.cpp,
   under the pointer, dim if minimized), then the hint and the count of
   earlier worlds as one right-aligned text. The menu draws
   over everything, its item under the pointer lit.
-- `Host.lean`: the calls into `shim.c` (a canvas and one window),
+- `Host.lean`: the calls into `shim.c` (a canvas and one window, which
+  `Host.open` makes resizable down to a least size),
   `Event.decode` for the events the shim hands back as a `RawEvent` (a
   press brings SDL's count of clicks in a row; the
   right button is `Event.menu`; SDL's keycodes and modifier bits become a
   `Key` and `Mods`; the wheel brings the pointer's place and how far it
-  turned), `Host.wake`, which any thread may call to end the
+  turned; the window resized is `Event.screen`), `Host.wake`, which any thread may call to end the
   loop's wait, `localTime` (through Lean's `Std.Time`), and `render`,
   the only code that draws.
 - `Runs.lean`: the loop's side of requests. `Runs` is the runs going on:
@@ -351,7 +352,9 @@ pure C functions, and the masking test's hooks into runs.cpp,
   the next frame (a run that ends wakes it), applies
   them with `feed`, then the outcomes of runs that ended, stops the runs of windows
   that are gone, ticks with the time, gives a frame if one is due
-  (`nextFrameAfter`), and draws. Also `main`, which runs the loop, or
+  (`nextFrameAfter`), and draws, on a new canvas if the world's screen
+  changed ([A resized window draws on a new
+  canvas](drawing/new-canvas.md)). Also `main`, which runs the loop, or
   `Tests.all` for `--test`, or `Boids.bench` (`Apps/Boids/Bench.lean`)
   for `--bench`.
 - `Tests.lean`: `Tests.all`, which runs the test in each module of
@@ -433,8 +436,10 @@ pure C functions, and the masking test's hooks into runs.cpp,
     ([Masking](stopping/masking.md)). `setMasking` and `refTaken` are
     runs.cpp's, for this test.
 - `shim.c`: Cairo draws into an image in memory, and SDL3 shows it in
-  one window and hands back events, text input included, the wheel,
-  and a wake (an SDL user event). No GPU in the design.
+  one resizable window and hands back events, text input included, the
+  wheel, the window resized, and a wake (an SDL user event). The
+  texture it shows is made again when the canvas is a new size. No GPU
+  in the design.
 - `runs.cpp`: stopping a run. A run's thread is inside a guard
   (`sv_guarded` for a pure function, `sv_guarded_io` for an IO action)
   while it works; safepoints check its stop flag (a thread-local

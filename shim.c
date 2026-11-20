@@ -210,6 +210,8 @@ extern SDL_Window *SDL_CreateWindow(const char *title, int w, int h,
 extern SDL_Renderer *SDL_CreateRenderer(SDL_Window *win, const char *name);
 extern SDL_Texture *SDL_CreateTexture(SDL_Renderer *r, uint32_t format,
                                       int access, int w, int h);
+extern void SDL_DestroyTexture(SDL_Texture *t);
+extern bool SDL_SetWindowMinimumSize(SDL_Window *win, int w, int h);
 extern bool SDL_UpdateTexture(SDL_Texture *t, const void *rect,
                               const void *pixels, int pitch);
 extern bool SDL_RenderTexture(SDL_Renderer *r, SDL_Texture *t,
@@ -223,6 +225,7 @@ extern uint16_t SDL_GetModState(void);
 extern bool SDL_PushEvent(void *event);
 
 #define SDL_INIT_VIDEO 0x20u
+#define SDL_WINDOW_RESIZABLE 0x20u
 #define SDL_PIXELFORMAT_ARGB8888 0x16362004u   // Cairo's ARGB32, same bytes
 #define SDL_TEXTUREACCESS_STREAMING 1
 #define SDL_EVENT_USER 0x8000u
@@ -230,22 +233,37 @@ extern bool SDL_PushEvent(void *event);
 static bool host_opened = false;
 static SDL_Renderer *host_renderer = NULL;
 static SDL_Texture *host_texture = NULL;
+static int host_texture_w = 0, host_texture_h = 0;   // the canvas's size
 
 static lean_obj_res sdl_error(void) {
   return lean_io_result_mk_error(
     lean_mk_io_user_error(lean_mk_string(SDL_GetError())));
 }
 
-LEAN_EXPORT lean_obj_res sv_host_open(b_lean_obj_arg title, uint32_t w,
-                                      uint32_t h, lean_obj_arg io) {
-  if (!SDL_Init(SDL_INIT_VIDEO)) return sdl_error();
-  SDL_Window *win = SDL_CreateWindow(lean_string_cstr(title), w, h, 0);
-  if (!win) return sdl_error();
-  host_renderer = SDL_CreateRenderer(win, NULL);
-  if (!host_renderer) return sdl_error();
+// The texture the canvas is copied into, made again when the canvas is a
+// new size: the loop makes a new canvas when the window is resized.
+static bool host_texture_fit(int w, int h) {
+  if (host_texture && w == host_texture_w && h == host_texture_h) return true;
+  if (host_texture) SDL_DestroyTexture(host_texture);
   host_texture = SDL_CreateTexture(host_renderer, SDL_PIXELFORMAT_ARGB8888,
                                    SDL_TEXTUREACCESS_STREAMING, w, h);
-  if (!host_texture) return sdl_error();
+  host_texture_w = w; host_texture_h = h;
+  return host_texture != NULL;
+}
+
+// The window, w × h, which the user can resize down to least_w × least_h,
+// and maximize.
+LEAN_EXPORT lean_obj_res sv_host_open(b_lean_obj_arg title, uint32_t w,
+                                      uint32_t h, uint32_t least_w,
+                                      uint32_t least_h, lean_obj_arg io) {
+  if (!SDL_Init(SDL_INIT_VIDEO)) return sdl_error();
+  SDL_Window *win = SDL_CreateWindow(lean_string_cstr(title), w, h,
+                                     SDL_WINDOW_RESIZABLE);
+  if (!win) return sdl_error();
+  SDL_SetWindowMinimumSize(win, least_w, least_h);
+  host_renderer = SDL_CreateRenderer(win, NULL);
+  if (!host_renderer) return sdl_error();
+  if (!host_texture_fit(w, h)) return sdl_error();
   // Without this SDL sends keys but no text.
   SDL_StartTextInput(win);
   host_opened = true;
@@ -268,6 +286,9 @@ LEAN_EXPORT lean_obj_res sv_host_wake(lean_obj_arg io) {
 LEAN_EXPORT lean_obj_res sv_host_present(b_lean_obj_arg c, lean_obj_arg io) {
   cairo_surface_t *s = cairo_get_target(cr_of(c));
   cairo_surface_flush(s);
+  if (!host_texture_fit(cairo_image_surface_get_width(s),
+                        cairo_image_surface_get_height(s)))
+    return sdl_error();
   SDL_UpdateTexture(host_texture, NULL, cairo_image_surface_get_data(s),
                     cairo_image_surface_get_stride(s));
   SDL_RenderTexture(host_renderer, host_texture, NULL, NULL);
@@ -298,7 +319,8 @@ static uint32_t u32_at(const uint8_t *e, int i) { uint32_t u; memcpy(&u, e + i, 
 static uint16_t u16_at(const uint8_t *e, int i) { uint16_t u; memcpy(&u, e + i, 2); return u; }
 
 // The next event; kind 0 is "none before the timeout", kind 7 a wake from
-// `sv_host_wake`. A timeout of 0 only polls. A press brings the button
+// `sv_host_wake`, kind 9 the window resized (its new width and height
+// are at 20 and 24). A timeout of 0 only polls. A press brings the button
 // (at 24) and how many clicks in a row it makes (at 26: 2 for a double
 // click). A key brings SDL's keycode
 // and modifiers; text brings the modifiers held as it was typed, and the
@@ -328,6 +350,8 @@ LEAN_EXPORT lean_obj_res sv_host_event(uint32_t timeout, lean_obj_arg io) {
         float dy = f32_at(e, 28) * (u32_at(e, 32) == 1 ? -1 : 1);
         return raw_event(8, f32_at(e, 36), f32_at(e, 40), dy, "");
       }
+      case 0x206: return raw_event(9, (int32_t)u32_at(e, 20),               // resized
+                                   (int32_t)u32_at(e, 24), 0, "");
       case SDL_EVENT_USER: return raw_event(7, 0, 0, 0, "");                // wake
       default: continue;
     }

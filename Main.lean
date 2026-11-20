@@ -20,12 +20,15 @@ open LeanMachine
 
 -- Applies every waiting event, the outcomes of runs that ended, a tick
 -- with the time, and a frame if one is due (at `due`, in nanoseconds on
--- the monotonic clock), then draws once. `frames` stops it early (for
--- tests); the window's close button or Esc stops it any time.
+-- the monotonic clock), then draws once, on a new canvas if the window
+-- was resized. `frames` stops it early (for tests); the window's close
+-- button or Esc stops it any time.
 partial def run (c : Canvas) (svc : Services) (d : Desktop) (runs : Runs)
     (frames : Option Nat) (due : Nat := 0) : IO Unit := do
   if frames == some 0 then runs.stopAll; return
+  let mut c := c
   let mut d := d
+  let screen := d.now.screen
   let mut runs := runs
   let mut quit := false
   -- Waits for an event, but not past 100 ms or the start of the next
@@ -59,13 +62,19 @@ partial def run (c : Canvas) (svc : Services) (d : Desktop) (runs : Runs)
   if d.now.animating && now ≥ due then
     (d, runs) ← feed svc d runs [.frame (now / 1000000)]
     due := nextFrameAfter due now
+  -- The canvas is the size of the world's screen, which the window's
+  -- size changes (`Event.screen`).
+  if d.now.screen != screen then
+    c ← Canvas.new d.now.screen.w.toUInt32 d.now.screen.h.toUInt32
   render c d.view
   Host.present c
   run c svc d runs (frames.map (· - 1)) due
 
 def main (args : List String) : IO Unit := do
-  -- The canvas and the window are the size of the start's screen.
+  -- The canvas and the window are the size of the start's screen, and
+  -- the window can be resized down to `Screen.least`.
   let screen := start.now.screen
+  let least := Screen.least
   let c ← Canvas.new screen.w.toUInt32 screen.h.toUInt32
   -- The REPLs' Lean is imported in the background; the first line waits
   -- for it.
@@ -84,7 +93,9 @@ def main (args : List String) : IO Unit := do
     Boids.bench
   | ["--frames", n] =>
     Host.open "Lean Machine" screen.w.toUInt32 screen.h.toUInt32
+      least.w.toUInt32 least.h.toUInt32
     run c svc start {} n.toNat?
   | _ =>
     Host.open "Lean Machine" screen.w.toUInt32 screen.h.toUInt32
+      least.w.toUInt32 least.h.toUInt32
     run c svc start {} none

@@ -9,5 +9,6 @@
 - [The taskbar guesses how wide text is](guessing-text-widths.md)
 - [Colours on the grid](colours-on-the-grid.md)
 - [The wheel](wheel.md)
+- [A resized window draws on a new canvas](new-canvas.md)
 
 [↑ Design](../README.md)

@@ -45,6 +45,13 @@ At the right of the taskbar, a hint of the keys, and the count of
 earlier worlds that undo can return to. The hint gives way when the
 buttons need its room.
 
+The Lean Machine window itself resizes and maximizes like any other
+window on your screen, down to 640 × 400. As it grows, the windows in
+it stay where they are; as it shrinks, its right edge and the taskbar
+push them in, only as far as they have to. A maximized window fills
+the new desktop. Undo doesn't change the window's size: it brings the
+windows back as they were, inside the size it is now.
+
 How it works: [The world and apps](../design/world/README.md)
 
 [↑ Use](README.md)

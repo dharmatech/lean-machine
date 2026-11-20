@@ -1,7 +1,8 @@
 # A smaller screen pushes windows in
 
 When the host's window changes size, the world hears it as
-`Event.screen w h`, and `World.onScreen` puts every window on the new
+`Event.screen w h` ([A resized window draws on a new
+canvas](../drawing/new-canvas.md)), and `World.onScreen` puts every window on the new
 screen. A screen that grows moves nothing: a window stays where it was
 put. A screen that shrinks pushes windows in from its right edge and
 from the bar, the way a wall would, but only as far as it has to.

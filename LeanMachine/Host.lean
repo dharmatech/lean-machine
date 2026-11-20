@@ -39,8 +39,10 @@ instance : Nonempty Canvas := CanvasPointed.property
 @[extern "sv_save_png"] opaque Canvas.savePng (c : @& Canvas)
   (path : @& String) : IO Unit
 
+-- The window, `w` by `h`, which the user can resize, down to `leastW` by
+-- `leastH`, and maximize.
 @[extern "sv_host_open"] opaque Host.open (title : @& String)
-  (w h : UInt32) : IO Unit
+  (w h leastW leastH : UInt32) : IO Unit
 @[extern "sv_host_present"] opaque Host.present (c : @& Canvas) : IO Unit
 -- Ends the loop's wait for events. Any thread may call it: a run calls it
 -- when it ends. Does nothing before `Host.open`.
@@ -83,10 +85,10 @@ def Mods.ofSDL (bits : UInt32) : Mods :=
 
 -- For a button, c is SDL's number for it: 1 left, 3 right, and for a
 -- press d is how many clicks in a row it makes; for the wheel, c is how
--- far it turned. A key brings
--- its code and modifiers in a and b; text, the modifiers held as it was
--- typed. Text typed with Ctrl held is a command, not text: the key event
--- that came with it carries it.
+-- far it turned. The window resized brings its new size in a and b. A
+-- key brings its code and modifiers in a and b; text, the modifiers held
+-- as it was typed. Text typed with Ctrl held is a command, not text: the
+-- key event that came with it carries it.
 def Event.decode (r : RawEvent) : Option Event :=
   let a := r.nums
   let x := a.get! 1
@@ -104,6 +106,7 @@ def Event.decode (r : RawEvent) : Option Event :=
   | 6 => if (Mods.ofSDL x.toUInt32).ctrl || r.text.isEmpty then none
          else some (.text r.text)
   | 8 => some (.wheel x y button)   -- c is how far it turned
+  | 9 => some (.screen x y)
   | _ => none   -- 7 is a wake (`Host.wake`): the loop goes on
 
 -- Runs `act`, then puts back the canvas's origin and clip as they were.
