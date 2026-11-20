@@ -156,7 +156,12 @@ pure C functions, and the masking test's hooks into runs.cpp,
   columns, without the namespace typed, until the line changes.
   The view and the step share one layout (`Repl.layout`), its rows
   each with what they show of an entry or the line (`Span`), from the
-  body's size the REPL keeps from the last `resize`. A press and a
+  body's size the REPL keeps from the last `resize`. The wheel, PageUp
+  and PageDown scroll the view back: it holds on to its top row
+  (`Repl.top`, an entry and a row of it), moved through the entries'
+  rows (`rowsBack`, `rowsOn`, `Entry.rowCount`), and follows the newest
+  rows again when it gets to them (`scrolledTo`) or a key does
+  something ([The REPL scrolls back to an entry and a row](lean/scrolling-back.md)). A press and a
   drag select between two places (`Spot`: a part, the entries counted
   from the oldest, then the line, and a character in it), found by
   `pointAt`; Ctrl+C asks for what's selected to be copied
@@ -464,6 +469,11 @@ pure C functions, and the masking test's hooks into runs.cpp,
     what Ctrl+C and Ctrl+Shift+C ask for, with a run going and not;
     then a drag over the desktop's REPL and Ctrl+C
     ([Copying from the REPL](lean/copying-from-the-repl.md)).
+  - `ReplScroll.lean`: `testReplScroll`: a REPL alone scrolled by the
+    wheel, a touchpad's halves, PageUp and PageDown, a run that ends
+    and a key typed meanwhile, a selection up there and drags past the
+    rows; then the desktop's REPL scrolled, a drag and Ctrl+C
+    ([The REPL scrolls back to an entry and a row](lean/scrolling-back.md)).
   - `Reload.lean`: `testReload`, which runs the phases in `Reload/`
     in turn ([Reloading](reloading/README.md)). `Kit.lean` has what
     they share: `reloadNow` (a file reloaded on the test's thread),

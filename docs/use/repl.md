@@ -28,8 +28,12 @@ line that wraps comes out as one line. Part of a line entered comes
 as you wrote it, so it pastes back as it was; a stretch past one entry
 brings the `> ` prompts along, so it reads as the REPL showed it.
 Copying ends the selection, and with nothing selected Ctrl+C stops a
-run or clears the line, as before. For now, only what's in view can be
-selected: the REPL doesn't scroll back yet.
+run or clears the line, as before.
+
+The wheel scrolls back through what the REPL showed before, and so do
+PageUp and PageDown (Shift+PageUp too, as in a terminal). A drag above
+or below the rows scrolls as it selects. What a run brings when it ends
+doesn't move the view; typing brings it back to the line.
 
 Each REPL has its own Lean, kept in its state, so undo takes back
 definitions too. In a REPL, `world` is the desktop as it was when Enter

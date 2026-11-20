@@ -9,6 +9,7 @@
 - [A REPL asks for its Lean](repl-asks-for-lean.md)
 - [The REPL's line holds several](several-lines.md)
 - [Copying from the REPL](copying-from-the-repl.md)
+- [The REPL scrolls back to an entry and a row](scrolling-back.md)
 - [Reading an environment from two threads](environment-two-threads.md)
 
 [↑ Design](../README.md)

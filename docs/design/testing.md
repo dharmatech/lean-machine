@@ -190,6 +190,18 @@ typed into the REPL, a drag goes from `144` to the end of the list
 (`copy-repl.png`), and Ctrl+C asks for a copy; again, it asks for
 nothing, and clears the line.
 
+Then scrolling the REPL back. A REPL alone evaluates twenty lines, more
+than its view holds, and it prints the first and last rows shown, and
+whether the cursor is: following the newest rows, the wheel a step back
+and 100 more, a step on from the top and from a step back, half a step
+twice, PageUp and PageDown, Shift+PageUp twice, a run that ends while
+it's scrolled back, and a key typed then. It prints what Ctrl+C copies
+after a drag up at the top, and where drags past the top and the bottom
+of the rows leave the view and how many lines they select. On the
+desktop the same lines go into the REPL, the wheel scrolls it to the
+top and a step on, a drag goes from `222` to `333` (`repl-scroll.png`)
+and Ctrl+C asks for a copy; then "1" typed brings back the line.
+
 Then reloading. It reloads each app's file in the desktop's Lean three
 times and prints how long each took, what Lean said and the apps it
 found; tries files it can't reload (Desktop.lean and Main.lean, which

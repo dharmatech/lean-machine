@@ -42,7 +42,8 @@ selection too, and a press elsewhere starts another. A run that ends
 leaves it alone, as the entries it brings come after it.
 
 A press starts a step undo can return to, so undo after a drag takes
-the selection back with the press. The REPL can't scroll back yet, so
-only what's in view can be selected.
+the selection back with the press. A drag above or below the rows
+scrolls the view, so a selection can go past what was in view
+([The REPL scrolls back to an entry and a row](scrolling-back.md)).
 
 [↑ Lean inside the desktop](README.md)

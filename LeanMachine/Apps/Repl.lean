@@ -13,7 +13,8 @@ among them before they recall, and Enter evaluates them all, as one
 source. The line, and every line entered, is
 coloured by the tokens the REPL's Lean reads in it, and Tab completes
 the name before the cursor from the names that Lean has. A press and a
-drag select what the REPL shows, and Ctrl+C copies it. Pure: the REPL
+drag select what the REPL shows, and Ctrl+C copies it; the wheel,
+PageUp and PageDown scroll back through it. Pure: the REPL
 only asks, and its Lean is a value with pure functions for both.
 Everything is monospace, so where a character or the cursor goes is
 arithmetic on `monoAdvance`. -/
@@ -91,8 +92,13 @@ structure Repl where
   selecting : Option (Spot × Spot) := none
   dragging : Bool := false        -- a press, not released yet
   -- The body's size, as the window last said it: a press needs it, to
-  -- find the row it's on.
+  -- find the row it's on, and the wheel, to count rows.
   size : Float × Float := replSize
+  -- Scrolled back, the view's top row: an entry, counted from the
+  -- oldest, and which of its rows. `none`: the view follows the newest
+  -- rows.
+  top : Option (Nat × Nat) := none
+  wheelRest : Float := 0          -- a touchpad's fraction of a row, not scrolled yet
 
 namespace Repl
 
@@ -305,29 +311,47 @@ def Entry.rows (cols : Nat) (e : Entry) : List (Row × Span) :=
   | .warning _ => inOne 0xe0af68
   | .error _ => inOne 0xf7768e
 
+-- How many rows `Entry.rows` cuts an entry into, without cutting it.
+def Entry.rowCount (cols : Nat) (e : Entry) : Nat :=
+  let lead := if e.isInput then prompt.length else 0
+  ((lineSpans e.text.toList.toArray).map fun (lo, hi) =>
+    max 1 ((lead + (hi - lo) + cols - 1) / cols)).sum
+
+#guard [Entry.input "ab\n12345678901", .output "", .output "x\n\n123456789012345"].all
+  fun e => e.rowCount 10 == (e.rows 10).length
+
 -- A row of the view: what it draws, and what it shows of the REPL's
--- text, in which part.
+-- text, in which part; and for a row of an entry, which entry and which
+-- of its rows.
 structure Shown where
   row : Row
   part : Option Nat
   span : Span
+  entryRow : Option (Nat × Nat) := none
 
 -- What the view shows at a width and height: its rows, top to bottom,
--- the cursor's row among them and its column, and the columns a row has.
+-- the cursor's row among them and its column (none: scrolled out of
+-- view), and the columns a row has.
 structure Layout where
   rows : List Shown
-  cursor : Nat × Nat
+  cursor : Option (Nat × Nat)
   cols : Nat
+
+-- How many columns, and rows, a body this wide, or high, has room for.
+def replCols (w : Float) : Nat := max 4 ((w - 2 * replPad) / monoAdvance replFont).floor.toUInt64.toNat
+def replFits (h : Float) : Nat := max 1 ((h - 2 * replPad) / replLineH).floor.toUInt64.toNat
 
 -- The transcript, then a row that says a run is going, then the line
 -- being edited and the cursor in it, then what Tab offered. Long lines
 -- wrap. When it all doesn't fit, the oldest rows go off the top, so the
 -- newest stay in view, and the cursor's row with them. The rows that
 -- show none of the text are on the end of the newest entry (a run's
--- row) or of the line (what Tab offered).
+-- row) or of the line (what Tab offered). Scrolled back, the view
+-- starts at its top row and goes on as far as it fits, so the line and
+-- the cursor may be below it.
 def Repl.layout (r : Repl) (w h : Float) : Layout :=
-  let cols := max 4 ((w - 2 * replPad) / monoAdvance replFont).floor.toUInt64.toNat
-  let fits := max 1 ((h - 2 * replPad) / replLineH).floor.toUInt64.toNat
+  let cols := replCols w
+  let fits := replFits h
   let s := r.line.text
   let n := s.length
   -- Where the cursor is, among the rows of the line.
@@ -348,6 +372,10 @@ def Repl.layout (r : Repl) (w h : Float) : Layout :=
   let offered : List Shown := match r.offer with
     | some o => (o.rows cols).map ({ row := ·, part := none, span := lineEnd })
     | none => []
+  let below := status ++ editing ++ offered
+  let entryRows (e : Entry) (j : Nat) : List Shown :=
+    (e.rows cols).zipIdx.map fun ((row, span), k) =>
+      { row, part := some j, span, entryRow := some (j, k) }
   -- Only the newest entries are cut into rows: enough to fill the view.
   -- The `i`th newest is the `count - 1 - i`th from the oldest.
   let rec newest (es : List Entry) (i : Nat) (rows : List Shown) (k : Nat) : List Shown :=
@@ -355,17 +383,39 @@ def Repl.layout (r : Repl) (w h : Float) : Layout :=
     | e :: rest =>
       if k ≥ fits then rows
       else
-        let rs := (e.rows cols).map fun (row, span) =>
-          ({ row, part := some (count - 1 - i), span } : Shown)
+        let rs := entryRows e (count - 1 - i)
         newest rest (i + 1) (rs ++ rows) (k + rs.length)
     | [] => rows
-  let below := status ++ editing ++ offered
-  let all := newest r.transcript 0 below below.length
-  -- The oldest rows go, but never the cursor's: a line taller than the
-  -- view shows from the cursor's row down.
-  let cursorAt := all.length - offered.length - editing.length + cRow
-  let gone := min (all.length - fits) cursorAt
-  { rows := (all.drop gone).take fits, cursor := (cursorAt - gone, cCol), cols }
+  -- After `rows`, the rows of the entries `es` (from entry `j`, oldest
+  -- first), then `below`, as many as fill the view; and where `below`
+  -- starts among them, if they get that far.
+  let rec onward (es : List Entry) (j : Nat) (rows : List Shown) : List Shown × Option Nat :=
+    if rows.length ≥ fits then (rows, none) else
+    match es with
+    | e :: rest => onward rest (j + 1) (rows ++ entryRows e j)
+    | [] => (rows ++ below, some rows.length)
+  let follow (_ : Unit) : Layout :=
+    let all := newest r.transcript 0 below below.length
+    -- The oldest rows go, but never the cursor's: a line taller than the
+    -- view shows from the cursor's row down.
+    let cursorAt := all.length - offered.length - editing.length + cRow
+    let gone := min (all.length - fits) cursorAt
+    { rows := (all.drop gone).take fits, cursor := some (cursorAt - gone, cCol), cols }
+  match r.top with
+  | none => follow ()
+  | some (j, k) =>
+    match (r.transcript.take (count - j)).reverse with
+    | [] => follow ()
+    | e :: rest =>
+      -- A row the window's size has since taken away is the entry's last.
+      let first := entryRows e j
+      let (rows, belowAt) := onward rest (j + 1) (first.drop (min k (first.length - 1)))
+      -- Short of filling the view, it would show the newest rows anyway.
+      if rows.length < fits then follow () else
+      let cursor := belowAt.bind fun b =>
+        let c := b + status.length + cRow
+        if c < fits then some (c, cCol) else none
+      { rows := rows.take fits, cursor, cols }
 
 -- The columns of a row that are selected, from `a` to `z`, if any: its
 -- characters between them; its prompt too, when the selection takes it
@@ -391,12 +441,95 @@ def Repl.view (r : Repl) (w h : Float) : Picture :=
       some (.rect (replPad + adv * c0.toFloat) (top i) (adv * (c1 - c0).toFloat) replLineH 0
         selectedRgb)
     | none => []
-  let (cursorRow, cCol) := l.cursor
+  let cursor : List Picture := match l.cursor with
+    | some (row, col) =>
+      [.rect (replPad + adv * col.toFloat - 1) (top row + 2) 2 (replLineH - 4) 0 0xbb9af7]
+    | none => []
   .group (selected ++ l.rows.zipIdx.flatMap (fun (v, i) =>
       v.row.map fun run =>
         .mono (replPad + adv * run.col.toFloat) (top i + 14) replFont run.rgb run.text) ++
-    [.rect (replPad + adv * cCol.toFloat - 1) (top cursorRow + 2)
-       2 (replLineH - 4) 0 0xbb9af7])
+    cursor)
+
+/-! ## Scrolling back -/
+
+-- The row `n` rows before row `k` of entry `j`, among the transcript's
+-- rows, back through `before`, the entries before it, newest first; no
+-- further than the first row.
+def rowsBack (cols : Nat) : List Entry → Nat → Nat → Nat → Nat × Nat
+  | [], j, k, n => (j, k - n)
+  | e :: rest, j, k, n =>
+    if n ≤ k then (j, k - n) else rowsBack cols rest (j - 1) (e.rowCount cols - 1) (n - k - 1)
+
+-- The row `n` rows after row `k` of the first of `es`, entry `j`, on
+-- through the rest, oldest first; `none` past the last.
+def rowsOn (cols : Nat) : List Entry → Nat → Nat → Nat → Option (Nat × Nat)
+  | [], _, _, _ => none
+  | e :: rest, j, k, n =>
+    let rk := e.rowCount cols
+    if k + n < rk then some (j, k + n) else rowsOn cols rest (j + 1) 0 (k + n - rk)
+
+-- Entry 1 is "a", a row; entry 0 is "b\nc", two.
+#guard rowsBack 10 [.output "a", .output "b\nc"] 2 1 2 == (1, 0)
+#guard rowsBack 10 [.output "a", .output "b\nc"] 2 1 3 == (0, 1)
+#guard rowsBack 10 [.output "a", .output "b\nc"] 2 1 10 == (0, 0)
+#guard rowsOn 10 [.output "a\nb", .output "c"] 4 1 1 == some (5, 0)
+#guard rowsOn 10 [.output "a\nb", .output "c"] 4 1 2 == none
+
+namespace Repl
+
+-- Entry `j`, counted from the oldest.
+def entryAt (r : Repl) (j : Nat) : Option Entry :=
+  if j < r.transcript.length then r.transcript[r.transcript.length - 1 - j]? else none
+
+-- The top row of the view that follows the newest rows, as an entry and
+-- a row of it; or, when it shows none of the transcript, as if just
+-- past its last entry.
+def followTop (r : Repl) : Nat × Nat :=
+  let l := { r with top := none }.layout r.size.1 r.size.2
+  (l.rows.head? >>= (·.entryRow)).getD (r.transcript.length, 0)
+
+-- The view scrolled back to start at `t`, or following the newest rows
+-- again, if from `t` it would show them anyway.
+def scrolledTo (r : Repl) (t : Nat × Nat) : Repl :=
+  let (j, k) := r.followTop
+  { r with top := if t.1 < j || (t.1 == j && t.2 < k) then some t else none }
+
+-- The view `n` rows further back, no further than the first.
+def scrollBack (r : Repl) (n : Nat) : Repl :=
+  let cols := replCols r.size.1
+  let (j, k) := r.top.getD r.followTop
+  let k := match r.entryAt j with
+    | some e => min k (e.rowCount cols - 1)
+    | none => k
+  r.scrolledTo (rowsBack cols (r.transcript.drop (r.transcript.length - j)) j k n)
+
+-- The view `n` rows on, following the newest rows again when it gets to
+-- them.
+def scrollOn (r : Repl) (n : Nat) : Repl :=
+  match r.top with
+  | none => r
+  | some (j, k) =>
+    let es := (r.transcript.take (r.transcript.length - j)).reverse
+    match rowsOn (replCols r.size.1) es j k n with
+    | some t => r.scrolledTo t
+    | none => { r with top := none }
+
+-- The wheel scrolls three rows a step; a touchpad's fractions add up.
+def wheel (r : Repl) (dy : Float) : Repl :=
+  let total := r.wheelRest + 3 * dy
+  let rows := if total ≥ 0 then total.floor else total.ceil
+  let r := { r with wheelRest := total - rows }
+  if rows > 0 then r.scrollBack rows.toUInt64.toNat
+  else if rows < 0 then r.scrollOn (-rows).toUInt64.toNat
+  else r
+
+-- PageUp and PageDown: a page back or on, a row less than the view.
+def page (r : Repl) (back : Bool) : Option (Repl × List Request) :=
+  let n := replFits r.size.2 - 1
+  let r' := if back then r.scrollBack (max 1 n) else r.scrollOn (max 1 n)
+  if r'.top == r.top then none else some (r', [])
+
+end Repl
 
 /-! ## Selecting and copying -/
 
@@ -478,14 +611,20 @@ def keyed (r : Repl) : AppEvent → Option (Repl × List Request)
   | _ => none
 
 -- A press puts both ends of the selection where it lands, and a drag
--- moves the second to the pointer. A key that does something ends the
--- selection; Ctrl+C copies it, and with nothing selected stops a run or
--- clears the line. Ctrl+Shift+C only copies.
+-- moves the second to the pointer; above or below the rows, the view
+-- scrolls a row for each motion. A key that does something ends the
+-- selection, and brings the view back to the newest rows; Ctrl+C copies
+-- the selection, and with nothing selected stops a run or clears the
+-- line. Ctrl+Shift+C only copies. The wheel, PageUp and PageDown scroll.
 def heard (r : Repl) (e : AppEvent) : Option (Repl × List Request) :=
+  let typing := { r with selecting := none, dragging := false, top := none }
   match e with
   | .key (.char 'c') m =>
     if m == ctrlShift || (m == { ctrl := true } && r.selection.isSome) then r.copy
-    else { r with selecting := none, dragging := false }.keyed e
+    else typing.keyed e
+  | .key .pageUp m => if m == {} || m == { shift := true } then r.page true else none
+  | .key .pageDown m => if m == {} || m == { shift := true } then r.page false else none
+  | .wheel _ _ dy => some (r.wheel dy, [])
   | .press x y =>
     let s := r.pointAt x y
     some ({ r with selecting := some (s, s), dragging := true }, [])
@@ -493,8 +632,11 @@ def heard (r : Repl) (e : AppEvent) : Option (Repl × List Request) :=
     match r.selecting with
     | some (m, p) =>
       if !r.dragging then none else
-      let s := r.pointAt x y
-      if s == p then none else some ({ r with selecting := some (m, s) }, [])
+      let r' := if y < replPad then r.scrollBack 1
+        else if y ≥ replPad + replLineH * (replFits r.size.2).toFloat then r.scrollOn 1
+        else r
+      let s := r'.pointAt x y
+      if s == p && r'.top == r.top then none else some ({ r' with selecting := some (m, s) }, [])
     | none => none
   | .release _ _ => if r.dragging then some ({ r with dragging := false }, []) else none
   | .resize w h => some ({ r with size := (w, h) }, [])
@@ -505,7 +647,7 @@ def heard (r : Repl) (e : AppEvent) : Option (Repl × List Request) :=
       | _, _ => none
     else (r.ended tag o ms).map (·, [])
   | .tick t => r.askLean t
-  | _ => { r with selecting := none, dragging := false }.keyed e
+  | _ => typing.keyed e
 
 -- Other modifiers don't matter yet: Ctrl+Left is Left. Whatever changes
 -- the REPL, the line's tokens are read again.
@@ -519,7 +661,8 @@ def repl : App :=
     ({ transcript := [.note "Lean, with Init and the desktop's modules but its apps, \
          LeanMachine open. A line is commands, or a term to evaluate. `world` is the \
          desktop when you press Enter, its apps in `(← world).catalog`; `launch app` \
-         opens an app. Ctrl+C stops a run. Up, Down: history. Tab completes a name. \
+         opens an app. Ctrl+C stops a run. Up, Down: history. The wheel, PageUp: back. \
+         Tab completes a name. \
          Ctrl+V pastes, lines and all; Shift+Enter starts a new line. A drag selects; \
          Ctrl+C copies it."] } : Repl)
     Repl.step Repl.view (size := replSize)
