@@ -111,6 +111,9 @@ inductive Request where
   -- `App`) go to the world, which puts each in place of the app of the
   -- same name: in the menu, and in every window opened from it.
   | reload (tag : Nat) (path src : String)
+  -- Puts `text` on the clipboard, the one a paste reads, here and in
+  -- other programs. Done at once; nothing comes back.
+  | copy (text : String)
 
 -- How a run ended.
 inductive Outcome where

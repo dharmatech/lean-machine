@@ -21,6 +21,10 @@ file scrolls as you move the pointer. The status line says how much is
 selected. Typing, Enter or Ctrl+V replace what's selected, Backspace
 and Delete take it out, and a move without Shift ends the selection.
 
+Ctrl+C copies what's selected, and Ctrl+X cuts it, for a paste here or
+in any other program. With nothing selected, Ctrl+C stops a reload
+instead; Ctrl+Shift+C only ever copies.
+
 The file is coloured
 as the REPL colours a line, with comments and strings that span lines
 (`/- … -/`, the module's doc comment) coloured as one. Tab completes the

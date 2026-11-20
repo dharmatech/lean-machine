@@ -13,6 +13,8 @@ Ctrl+S saves and Ctrl+O goes back to the list. A paste (Ctrl+V: the
 loop reads the clipboard) goes in at the cursor as lines. Shift with a
 move, a drag, or Ctrl+A selects, from a mark to the cursor; what's
 typed or pasted replaces the selection, and Backspace takes it out.
+Ctrl+C copies the selection to the clipboard (a request the loop does
+at once), and Ctrl+X cuts it.
 
 Ctrl+R reloads the apps the file defines: the desktop's Lean elaborates
 the file as it is in the editor, saved or not, and if Lean finds no
@@ -294,6 +296,17 @@ def selected (e : Editor) : String :=
   | some (a, z) => e.buffer.between a z
   | none => ""
 
+-- How much is from `a` to `z`, in words: characters on one line, or
+-- lines, not counting a line it only reaches the start of.
+def howMuch (a z : Nat × Nat) : String :=
+  let (n, what) := if a.1 == z.1 then (z.2 - a.2, "character")
+    else (z.1 - a.1 + if z.2 == 0 then 0 else 1, "line")
+  s!"{n} {what}{if n == 1 then "" else "s"}"
+
+#guard howMuch (2, 3) (2, 15) == "12 characters"
+#guard howMuch (2, 0) (3, 0) == "1 line"
+#guard howMuch (11, 0) (17, 20) == "7 lines"
+
 -- How many lines and columns of the file the editor shows, at its size;
 -- at least one of each.
 def rows (e : Editor) : Nat :=
@@ -342,6 +355,18 @@ def removing (e : Editor) (f : Buffer → Buffer) : Buffer → Buffer :=
   match e.selection with
   | some (a, z) => (·.remove a z)
   | none => f
+
+-- Ctrl+C: the selection goes on the clipboard, and stays selected.
+-- Nothing selected, nothing.
+def copy (e : Editor) : Option (Editor × List Request) := do
+  let (a, z) ← e.selection
+  some ({ e with note := s!"copied {howMuch a z}" }, [.copy (e.buffer.between a z)])
+
+-- Ctrl+X: the selection goes on the clipboard and out of the file, as
+-- one edit.
+def cut (e : Editor) : Option (Editor × List Request) := do
+  let (a, z) ← e.selection
+  some ({ e.edit (·.remove a z) with note := s!"cut {howMuch a z}" }, [.copy (e.buffer.between a z)])
 
 -- A move: the cursor goes elsewhere, the file stays.
 def move (e : Editor) (f : Buffer → Buffer) : Editor :=
@@ -432,8 +457,12 @@ def editKey (e : Editor) (k : Key) (m : Mods) : Option (Editor × List Request) 
         { b with line := b.line.toEnd } with mark := some (0, 0) }, [])
     | .char 's' => e'.save
     | .char 'r' => e'.reload
+    -- Ctrl+C copies what's selected; with nothing selected, it stops a
+    -- reload. Ctrl+Shift+C only copies.
     | .char 'c' =>
-      if e.reloading then some ({ e' with note := "stopping…" }, [.stop reloadTag]) else none
+      if m.shift || e.selection.isSome then e'.copy
+      else if e.reloading then some ({ e' with note := "stopping…" }, [.stop reloadTag]) else none
+    | .char 'x' => e'.cut
     | .char 'o' =>
       if e.changed && !e.leaving then
         some ({ e with leaving := true, note := "not saved: Ctrl+O again leaves the changes" }, [])
@@ -715,10 +744,7 @@ def viewFile (e : Editor) (w h : Float) : List Picture :=
   let path := e.path.getD ""
   let state := if e.savingAt.isSome then "saving…" else if e.changed then "changed" else "saved"
   let howMuch := match sel with
-    | some (a, z) => if a.1 == z.1 then s!" ({z.2 - a.2} selected)"
-                     else
-                       let n := z.1 - a.1 + if z.2 == 0 then 0 else 1
-                       s!" ({n} line{if n == 1 then "" else "s"} selected)"
+    | some (a, z) => s!" ({howMuch a z} selected)"
     | none => ""
   let status := s!"{path}   {b.row + 1}:{b.col + 1}{howMuch}   {if e.note.isEmpty then state else e.note}"
   lineRows ++ cursorAt ++ said ++ offered ++

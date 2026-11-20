@@ -42,9 +42,8 @@
   [A compiled simulation under a reloaded app](design/reloading/compiled-under-reloaded.md));
   go to the next marked line; reload on save; keep fewer reloads for
   undo than other steps.
-- The editor: read only the lines in view, and the rest later; select,
-  copy and cut (paste and selecting are in); a drag held past the
-  edge that goes on scrolling; search; undo a keystroke at a time; open a file from
+- The editor: read only the lines in view, and the rest later; a drag
+  held past the edge that goes on scrolling; search; undo a keystroke at a time; open a file from
   the REPL; warn before Esc quits with changes not saved.
 - Measure proportional text in the view, for layout that wraps (Notes)
   and for the taskbar, which guesses

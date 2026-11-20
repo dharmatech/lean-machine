@@ -39,6 +39,7 @@ pure C functions, and the masking test's hooks into runs.cpp,
   the run took. Files are requests too: `read` a file, `write` one,
   `list` the files under a folder, by paths from the desktop's own
   folder, with outcomes `read` (the text), `wrote` and `listed`.
+  `copy` puts text on the clipboard, with no outcome.
   `reload` elaborates a file's text in the desktop's Lean; its outcome
   `reloaded` has what Lean said, as `Remark`s (a `Said` at a line and
   column), the Lean after the file, and the names of the apps that went
@@ -105,7 +106,9 @@ pure C functions, and the masking test's hooks into runs.cpp,
   typed, entered or pasted replaces it (`replacing`), Backspace and
   Delete take it out (`removing`, `Buffer.remove`), and
   `Buffer.between` reads it
-  ([Selecting is a mark and the cursor](editor/selecting.md)). It asks
+  ([Selecting is a mark and the cursor](editor/selecting.md)). Ctrl+C
+  and Ctrl+X ask for it to go on the clipboard (`copy`, `cut`)
+  ([Copy and cut are requests](editor/copy-and-cut.md)). It asks
   for the desktop's Lean and the list of files as it opens, as the REPL
   asks for its Lean; opening and saving are `read` and `write`
   requests, under a tag for each kind, and so is Ctrl+R's `reload`.
@@ -291,7 +294,7 @@ pure C functions, and the masking test's hooks into runs.cpp,
 - `Host.lean`: the calls into `shim.c` (a canvas and one window, which
   `Host.open` makes resizable down to a least size, and which
   `Host.setFullscreen` puts in full screen or takes out, and
-  `Host.clipboard`, the clipboard's text),
+  `Host.clipboard`, the clipboard's text, and `Host.setClipboard`),
   `Event.decode` for the events the shim hands back as a `RawEvent` (a
   press brings SDL's count of clicks in a row; the
   right button is `Event.menu`; SDL's keycodes and modifier bits become a
@@ -307,7 +310,8 @@ pure C functions, and the masking test's hooks into runs.cpp,
   a stop with nothing to stop is answered at once), evaluating through
   `Services.eval` and reloading through `Services.reload`, so this
   module needn't import Lean, and answers file
-  requests at once (`fileOutcome`), from `Services.root`: a write goes
+  requests at once (`fileOutcome`), from `Services.root`, and a copy
+  (`Services.copy`): a write goes
   beside the file and is renamed over it, and a listing walks the
   folder (`walkDir`) past hidden folders; `collect` turns
   runs that ended into `Event.done`, then `Event.reload` with the apps
@@ -441,6 +445,10 @@ pure C functions, and the masking test's hooks into runs.cpp,
     alone; a drag, and on the desktop, a drag down Clock.lean and past
     the bottom of its view
     ([Selecting is a mark and the cursor](editor/selecting.md)).
+  - `Copy.lean`: `testCopy`: what Ctrl+C, Ctrl+Shift+C and Ctrl+X ask
+    for, with a selection, without one and during a reload; a cut
+    pasted elsewhere; and lines of Clock.lean copied through the loop
+    ([Copy and cut are requests](editor/copy-and-cut.md)).
   - `Reload.lean`: `testReload`, which runs the phases in `Reload/`
     in turn ([Reloading](reloading/README.md)). `Kit.lean` has what
     they share: `reloadNow` (a file reloaded on the test's thread),
@@ -472,7 +480,7 @@ pure C functions, and the masking test's hooks into runs.cpp,
 - `shim.c`: Cairo draws into an image in memory, and SDL3 shows it in
   one resizable window and hands back events, text input included, the
   wheel, the window resized, and a wake (an SDL user event), and reads
-  the clipboard's text. The
+  and sets the clipboard's text. The
   texture it shows is made again when the canvas is a new size. No GPU
   in the design.
 - `runs.cpp`: stopping a run. A run's thread is inside a guard

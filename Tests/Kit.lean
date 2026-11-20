@@ -50,17 +50,21 @@ def answerNow {σ : Type} (svc : Services) (step : σ → AppEvent → Option (�
   match step r e with
   | none => return r
   | some (r, asks) => asks.foldlM (init := r) fun r a => do
-    let answer : AppEvent ← match a with
-      | .run tag work => pure (.done tag (.value (work ())) 0)
+    let answer : Option AppEvent ← match a with
+      | .run tag work => pure (some (.done tag (.value (work ())) 0))
       | .eval tag src env => do
-        pure (.done tag (← svc.eval src env (← IO.CancelToken.new)) 0)
-      | .stop tag => pure (.done tag (.stopped [] false) 0)
+        pure (some (.done tag (← svc.eval src env (← IO.CancelToken.new)) 0))
+      | .stop tag => pure (some (.done tag (.stopped [] false) 0))
       | .read tag _ | .write tag _ _ | .list tag _ => do
-        pure (.done tag (← (fileOutcome svc.root a).getD (pure (.failed "?"))) 0)
+        pure (some (.done tag (← (fileOutcome svc.root a).getD (pure (.failed "?"))) 0))
       -- The apps it made go nowhere: there's no world here.
       | .reload tag path src => do
-        pure (.done tag (← svc.reload path src (← IO.CancelToken.new)).1 0)
-    return ((step r answer).map (·.1)).getD r
+        pure (some (.done tag (← svc.reload path src (← IO.CancelToken.new)).1 0))
+      -- Nothing comes back from a copy.
+      | .copy text => do svc.copy text; pure none
+    match answer with
+    | some answer => return ((step r answer).map (·.1)).getD r
+    | none => return r
 
 def hearNow (svc : Services) : Repl → AppEvent → IO Repl := answerNow svc Repl.step
 

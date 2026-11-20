@@ -170,6 +170,13 @@ press. On the desktop it drags down seven lines of Clock.lean
 (`select-editor.png`), then from the same line to under the window,
 where five motions scroll it five lines.
 
+Then copying and cutting, in an editor alone: it prints what Ctrl+C,
+Ctrl+Shift+C and Ctrl+X ask for, and the note they leave, with two
+lines selected, with nothing selected, and with nothing selected during
+a reload (Ctrl+C stops it); then a cut, and what it copied pasted at
+the end of the file. On the desktop, lines 12 to 18 of Clock.lean
+selected by a drag and copied through the loop (`copy-editor.png`).
+
 Then reloading. It reloads each app's file in the desktop's Lean three
 times and prints how long each took, what Lean said and the apps it
 found; tries files it can't reload (Desktop.lean and Main.lean, which

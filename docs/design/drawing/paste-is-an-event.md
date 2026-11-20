@@ -16,6 +16,9 @@ Why the loop, and not a request the app makes:
 - Tests hand the text over as `Event.paste`. Without a window, as in
   `--test`, the clipboard is empty.
 
+The other way, an app asks: a copy is a request
+([Copy and cut are requests](../editor/copy-and-cut.md)).
+
 Pasted text comes from anywhere, so each app tidies it first
 (`pastedLines`): lines end at "\n", "\r\n" or "\r"; a tab becomes two
 spaces, as Lean takes no tabs ("tabs are not allowed"); other control

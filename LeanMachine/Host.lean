@@ -56,6 +56,9 @@ instance : Nonempty Canvas := CanvasPointed.property
 -- programs: empty if there's none, or none that is text, and before
 -- `Host.open`.
 @[extern "sv_host_clipboard"] opaque Host.clipboard : IO String
+-- Puts `text` on the clipboard, for a paste here or in other programs.
+-- Does nothing before `Host.open`.
+@[extern "sv_host_set_clipboard"] opaque Host.setClipboard (text : @& String) : IO Unit
 -- An event as `sv_host_event` in shim.c hands it back: numbers
 -- [kind, a, b, c, d], and the text of a text event (empty for the others).
 -- Text can't travel in a `FloatArray`, and two fields keep one call per
