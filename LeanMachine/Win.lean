@@ -114,6 +114,9 @@ inductive Event where
   | key (k : Key) (mods : Mods)
   | text (s : String)
   | paste (s : String)        -- from the loop: a paste key, and the clipboard's text
+  | middle (x y : Float)      -- the middle button, which the loop turns into `pasteAt`
+  -- From the loop: a middle click at (x, y), and the primary selection's text.
+  | pasteAt (x y : Float) (s : String)
   | tick (t : TimeOfDay)      -- from the loop, not the host
   | frame (ms : Nat)          -- from the loop: 60 a second while an app animates
   | done (win tag : Nat) (outcome : Outcome) (ms : Nat)  -- from the loop: a run ended
@@ -221,11 +224,12 @@ def Win.toApp (w : Win) : Event → Option AppEvent
   | .key k m => some (.key k m)
   | .text s => some (.text s)
   | .paste s => some (.paste s)
+  | .pasteAt x y s => some (.pasteAt (x - w.bodyX) (y - w.bodyY) s)
   | .tick t => some (.tick t)
   | .frame ms => some (.frame ms)
   | .done _ tag o ms => some (.done tag o ms)
   | .wheel x y dy => some (.wheel (x - w.bodyX) (y - w.bodyY) dy)
-  | .menu .. | .launch .. | .reload .. | .screen .. | .quit => none
+  | .menu .. | .middle .. | .launch .. | .reload .. | .screen .. | .quit => none
 
 -- The window after its app hears `e`, in the app's own terms already,
 -- and what the app asked for.

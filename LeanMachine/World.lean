@@ -262,6 +262,15 @@ def World.stepWindows (world : World) : Event → World
     else world.toFocus (.key k m)
   | .text s => world.toFocus (.text s)
   | .paste s => world.toFocus (.paste s)
+  -- A middle click pastes into the body of the window under the
+  -- pointer, which comes to the front and is focused, as by a press.
+  | .pasteAt x y s =>
+    match world.hit x y with
+    | some w =>
+      if !w.inBody x y then world
+      else { world with windows := world.raise w, focus := w.id }.toFocus (.pasteAt x y s)
+    | none => world
+  | .middle .. => world   -- the loop's
   -- The wheel goes to the window under the pointer, focused or not.
   | .wheel x y dy =>
     match world.hit x y with
@@ -300,7 +309,8 @@ def World.takeAsked (world : World) : World × List Asked :=
 -- only closes the menu or misses the taskbar's buttons, and so does a
 -- reload, so undo brings the old apps back, and with a window focused,
 -- Ctrl+Shift+M, Ctrl+Shift+H and a paste, so undo takes the paste back
--- alone; nothing else does.
+-- alone, and a middle click's paste into a window's body; nothing else
+-- does.
 def World.commits (world : World) : Event → Bool
   | .press x y _ =>
     match world.menu with
@@ -309,6 +319,7 @@ def World.commits (world : World) : Event → Bool
   | .reload .. => true
   | .key k m => (desktopKey 'm' k m || desktopKey 'h' k m) && world.focus != 0
   | .paste _ => world.focus != 0
+  | .pasteAt x y _ => ((world.hit x y).map (·.inBody x y)).getD false
   | _ => false
 
 end LeanMachine

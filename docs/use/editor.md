@@ -13,7 +13,8 @@ last, two more after `:=`, `do`, `where`, `=>`, `by`, `then` or
 
 Ctrl+V pastes text you copied elsewhere at the cursor, lines and all,
 with each tab as two spaces. In the list of files, it pastes into
-what's typed to narrow it.
+what's typed to narrow it. A middle click pastes what you last selected
+in another program where the click lands.
 
 To select, hold Shift while you move the cursor, drag over the text,
 or press Ctrl+A for the whole file. Drag past the top or bottom and the

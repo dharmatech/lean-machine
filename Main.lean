@@ -57,6 +57,11 @@ partial def run (c : Canvas) (svc : Services) (d : Desktop) (runs : Runs)
         let s ← Host.clipboard
         unless s.isEmpty do (d, runs) ← feed svc d runs [.paste s]
       else (d, runs) ← feed svc d runs [.key k m]
+    -- The middle button: the window under the pointer hears the primary
+    -- selection's text, pasted where the click lands.
+    | some (.middle x y) =>
+      let s ← Host.primarySelection
+      unless s.isEmpty do (d, runs) ← feed svc d runs [.pasteAt x y s]
     | some e => (d, runs) ← feed svc d runs [e]
     | none => pure ()
     raw ← Host.event 0

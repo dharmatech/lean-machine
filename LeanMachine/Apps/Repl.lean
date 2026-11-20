@@ -620,6 +620,7 @@ def keyed (r : Repl) : AppEvent → Option (Repl × List Request)
 -- selection, and brings the view back to the newest rows; Ctrl+C copies
 -- the selection, and with nothing selected stops a run or clears the
 -- line. Ctrl+Shift+C only copies. The wheel, PageUp and PageDown scroll.
+-- A middle click pastes, on the line where it lands.
 def heard (r : Repl) (e : AppEvent) : Option (Repl × List Request) :=
   let typing := { r with selecting := none, dragging := false, top := none }
   match e with
@@ -629,6 +630,13 @@ def heard (r : Repl) (e : AppEvent) : Option (Repl × List Request) :=
   | .key .pageUp m => if m == {} || m == { shift := true } then r.page true else none
   | .key .pageDown m => if m == {} || m == { shift := true } then r.page false else none
   | .wheel _ _ dy => some (r.wheel dy, [])
+  -- A middle click pastes in the line: where it lands, on the line, or
+  -- at the cursor.
+  | .pasteAt x y s =>
+    let r := match r.hit x y with
+      | some (v, at_) => if v.inLine then { r with line := .at r.line.text at_.at_ } else r
+      | none => r
+    { r with selecting := none, dragging := false, top := none }.keyed (.paste s)
   | .press x y => do
     let (v, s) ← r.hit x y
     let r := if v.inLine then { r with line := .at r.line.text s.at_, offer := none } else r

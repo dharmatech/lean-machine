@@ -17,7 +17,10 @@ Why the loop, and not a request the app makes:
   `--test`, the clipboard is empty.
 
 The other way, an app asks: a copy is a request
-([Copy and cut are requests](../editor/copy-and-cut.md)).
+([Copy and cut are requests](../editor/copy-and-cut.md)). A middle
+click pastes the other clipboard, the primary selection, the same way,
+into the window under the pointer
+([A middle click pastes the primary selection](middle-click-pastes.md)).
 
 Pasted text comes from anywhere, so each app tidies it first
 (`pastedLines`): lines end at "\n", "\r\n" or "\r"; a tab becomes two

@@ -208,6 +208,16 @@ desktop the same lines go into the REPL, the wheel scrolls it to the
 top and a step on, a drag goes from `222` to `333` (`repl-scroll.png`)
 and Ctrl+C asks for a copy; then "1" typed brings back the line.
 
+Then a middle click. It prints what the decoder makes of buttons 1, 2
+and 3 pressed and 2 released. In an editor alone, with line 1
+selected, a middle click after `:= ` on line 2 pastes there and leaves
+nothing selected; in a REPL alone, one before the `2` of `1 + 2`, and
+after End, one on the transcript, which pastes at the cursor. On the
+desktop, with Notes focused, a middle click under the REPL's line
+focuses the REPL and pastes `#eval 6 * 7` (`middle-paste.png`); undo
+takes it back, and Notes is focused again. A middle click on Notes'
+title makes no step. Without a window, the primary selection is empty.
+
 Then reloading. It reloads each app's file in the desktop's Lean three
 times and prints how long each took, what Lean said and the apps it
 found; tries files it can't reload (Desktop.lean and Main.lean, which

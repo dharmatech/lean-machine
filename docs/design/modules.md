@@ -39,7 +39,9 @@ pure C functions, and the masking test's hooks into runs.cpp,
   the run took. Files are requests too: `read` a file, `write` one,
   `list` the files under a folder, by paths from the desktop's own
   folder, with outcomes `read` (the text), `wrote` and `listed`.
-  `copy` puts text on the clipboard, with no outcome.
+  `copy` puts text on the clipboard, with no outcome. Besides presses,
+  keys and the like, an app hears `paste` (a paste key's text) and
+  `pasteAt` (a middle click's, where it landed).
   `reload` elaborates a file's text in the desktop's Lean; its outcome
   `reloaded` has what Lean said, as `Remark`s (a `Said` at a line and
   column), the Lean after the file, and the names of the apps that went
@@ -109,7 +111,8 @@ pure C functions, and the masking test's hooks into runs.cpp,
   `Buffer.between` reads it
   ([Selecting is a mark and the cursor](editor/selecting.md)). Ctrl+C
   and Ctrl+X ask for it to go on the clipboard (`copy`, `cut`)
-  ([Copy and cut are requests](editor/copy-and-cut.md)). It asks
+  ([Copy and cut are requests](editor/copy-and-cut.md)). A paste
+  (`pasted`) goes in at the cursor; a middle click's, where it lands. It asks
   for the desktop's Lean and the list of files as it opens, as the REPL
   asks for its Lean; opening and saving are `read` and `write`
   requests, under a tag for each kind, and so is Ctrl+R's `reload`.
@@ -164,7 +167,8 @@ pure C functions, and the masking test's hooks into runs.cpp,
   something ([The REPL scrolls back to an entry and a row](lean/scrolling-back.md)). A press and a
   drag select between two places (`Spot`: a part, the entries counted
   from the oldest, then the line, and a character in it), found by
-  `hit` and `pointAt`, and a press on the line moves its cursor there; Ctrl+C asks for what's selected to be copied
+  `hit` and `pointAt`, and a press on the line moves its cursor there,
+  as a middle click does before it pastes; Ctrl+C asks for what's selected to be copied
   (`Repl.selected`, `copy`) and ends the selection, and with nothing
   selected stops a run or clears the line
   ([Copying from the REPL](lean/copying-from-the-repl.md)).
@@ -284,7 +288,9 @@ pure C functions, and the masking test's hooks into runs.cpp,
   open menu is kept on the screen. `World.commits` says which
   events start a step undo can return to: a press that does something
   (not one that only closes the menu or misses the taskbar's buttons),
-  a reload, Ctrl+Shift+M and Ctrl+Shift+H, and a paste.
+  a reload, Ctrl+Shift+M and Ctrl+Shift+H, and a paste. A middle
+  click's paste (`Event.pasteAt`) goes to the window under the pointer,
+  which comes to the front and is focused, if it lands in its body.
 - `Desktop.lean`: `Desktop` is the world now and every world before it;
   undo (Ctrl+Shift+Z) takes the previous one, apps' states included,
   on the screen there is now (`World.onScreen`).
@@ -309,10 +315,11 @@ pure C functions, and the masking test's hooks into runs.cpp,
 - `Host.lean`: the calls into `shim.c` (a canvas and one window, which
   `Host.open` makes resizable down to a least size, and which
   `Host.setFullscreen` puts in full screen or takes out, and
-  `Host.clipboard`, the clipboard's text, and `Host.setClipboard`),
+  `Host.clipboard`, the clipboard's text, and `Host.setClipboard`, and
+  `Host.primarySelection`),
   `Event.decode` for the events the shim hands back as a `RawEvent` (a
-  press brings SDL's count of clicks in a row; the
-  right button is `Event.menu`; SDL's keycodes and modifier bits become a
+  press brings SDL's count of clicks in a row; the middle button is
+  `Event.middle`, the right button `Event.menu`; SDL's keycodes and modifier bits become a
   `Key` and `Mods`; the wheel brings the pointer's place and how far it
   turned; the window resized is `Event.screen`), `Host.wake`, which any thread may call to end the
   loop's wait, `localTime` (through Lean's `Std.Time`), and `render`,
@@ -397,7 +404,9 @@ pure C functions, and the masking test's hooks into runs.cpp,
   or takes it out; Esc closes the menu, takes the window out of full
   screen, or quits; a paste key reads the clipboard, and the focused
   app hears `paste` with its text
-  ([A paste is an event the loop makes](drawing/paste-is-an-event.md)). Also `main`, which runs the loop, or
+  ([A paste is an event the loop makes](drawing/paste-is-an-event.md));
+  a middle click reads the primary selection, and the world hears
+  `pasteAt` ([A middle click pastes the primary selection](drawing/middle-click-pastes.md)). Also `main`, which runs the loop, or
   `Tests.all` for `--test`, or `Boids.bench` (`Apps/Boids/Bench.lean`)
   for `--bench`.
 - `Tests.lean`: `Tests.all`, which runs the test in each module of
@@ -475,6 +484,10 @@ pure C functions, and the masking test's hooks into runs.cpp,
     and a key typed meanwhile, a selection up there and drags past the
     rows; then the desktop's REPL scrolled, a drag and Ctrl+C
     ([The REPL scrolls back to an entry and a row](lean/scrolling-back.md)).
+  - `MiddlePaste.lean`: `testMiddlePaste`: what the decoder makes of the
+    middle button; a middle click's paste in an editor alone and a REPL
+    alone; on the desktop, into the REPL behind Notes, undone, and on a
+    title ([A middle click pastes the primary selection](drawing/middle-click-pastes.md)).
   - `Reload.lean`: `testReload`, which runs the phases in `Reload/`
     in turn ([Reloading](reloading/README.md)). `Kit.lean` has what
     they share: `reloadNow` (a file reloaded on the test's thread),
@@ -506,7 +519,7 @@ pure C functions, and the masking test's hooks into runs.cpp,
 - `shim.c`: Cairo draws into an image in memory, and SDL3 shows it in
   one resizable window and hands back events, text input included, the
   wheel, the window resized, and a wake (an SDL user event), and reads
-  and sets the clipboard's text. The
+  and sets the clipboard's text, and reads the primary selection's. The
   texture it shows is made again when the canvas is a new size. No GPU
   in the design.
 - `runs.cpp`: stopping a run. A run's thread is inside a guard

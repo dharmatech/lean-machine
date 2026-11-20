@@ -13,6 +13,7 @@ import Tests.Select
 import Tests.Copy
 import Tests.ReplCopy
 import Tests.ReplScroll
+import Tests.MiddlePaste
 import Tests.Reload
 import Tests.Runs
 import Tests.Masking
@@ -43,6 +44,7 @@ def all (c : Canvas) (svc : Services) : IO Unit := do
   testCopy c svc
   testReplCopy c svc
   testReplScroll c svc
+  testMiddlePaste c svc
   testReload c svc
   testRuns c svc
   testMasking

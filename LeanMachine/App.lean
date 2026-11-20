@@ -145,6 +145,9 @@ inductive AppEvent where
   -- Pasted: the clipboard's text, as a paste key found it. It may span
   -- lines, end lines with "\r\n", and have tabs (`pastedLines` tidies it).
   | paste (s : String)
+  -- A middle click at (x, y): the primary selection's text, the last
+  -- selected in any program, pasted where it lands.
+  | pasteAt (x y : Float) (s : String)
   | tick (t : TimeOfDay)   -- many times a second, to every app
   | done (tag : Nat) (outcome : Outcome) (ms : Nat)  -- a run it asked for ended
   -- The wheel turned with the pointer at (x, y): `dy` steps away from

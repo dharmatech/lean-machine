@@ -590,6 +590,15 @@ def ended (e : Editor) (tag : Nat) (o : Outcome) (ms : Nat) : Option Editor :=
   | 4, .failed why => some { e with reloading := false, note := s!"can't reload it: {why}" }
   | _, _ => none
 
+-- A paste goes in the file as lines, or its first line in what's
+-- typed to choose a file.
+def pasted (e : Editor) (s : String) : Option (Editor × List Request) :=
+  let ls := pastedLines s
+  if ls == [""] then none else
+  match e.path with
+  | some _ => some ((e.edit (e.replacing (·.paste ls)) (Buffer.relexAbove (ls.length - 1))).follow, [])
+  | none => some ({ e with filter := e.filter.insert (ls.headD ""), pick := 0 }, [])
+
 def heard (e : Editor) : AppEvent → Option (Editor × List Request)
   | .tick t => e.ask t
   | .done tag o ms => (e.ended tag o ms).map (·, [])
@@ -609,14 +618,16 @@ def heard (e : Editor) : AppEvent → Option (Editor × List Request)
     match e.path with
     | some _ => some ((e.edit (e.replacing fun b => { b with line := b.line.insert s })).follow, [])
     | none => some ({ e with filter := e.filter.insert s, pick := 0 }, [])
-  -- A paste goes in the file as lines, or its first line in what's
-  -- typed to choose a file.
-  | .paste s =>
-    let ls := pastedLines s
-    if ls == [""] then none else
-    match e.path with
-    | some _ => some ((e.edit (e.replacing (·.paste ls)) (Buffer.relexAbove (ls.length - 1))).follow, [])
-    | none => some ({ e with filter := e.filter.insert (ls.headD ""), pick := 0 }, [])
+  | .paste s => e.pasted s
+  -- A middle click in the file puts the cursor where it lands, the
+  -- selection gone, and pastes there; on the status line, at the cursor.
+  | .pasteAt x y s =>
+    let row := ((y - edPad) / edLineH).floor
+    let e := if e.path.isNone || row < 0 || row.toUInt64.toNat ≥ e.rows then e
+      else
+        let (r, c) := e.pointAt x y
+        { e.move (·.goTo r c) with mark := none }
+    e.pasted s
   | .key k m =>
     match e.path with
     | some _ => (e.editKey k m).map fun (e, asks) => (if e.path.isSome then e.follow else e, asks)

@@ -227,6 +227,7 @@ extern uint16_t SDL_GetModState(void);
 extern bool SDL_PushEvent(void *event);
 extern char *SDL_GetClipboardText(void);
 extern bool SDL_SetClipboardText(const char *text);
+extern char *SDL_GetPrimarySelectionText(void);
 extern void SDL_free(void *mem);
 
 #define SDL_INIT_VIDEO 0x20u
@@ -323,6 +324,18 @@ LEAN_EXPORT lean_obj_res sv_host_present(b_lean_obj_arg c, lean_obj_arg io) {
 LEAN_EXPORT lean_obj_res sv_host_clipboard(lean_obj_arg io) {
   if (!host_opened) return lean_io_result_mk_ok(lean_mk_string(""));
   char *text = SDL_GetClipboardText();
+  lean_object *s = lean_mk_string(text ? text : "");
+  SDL_free(text);
+  return lean_io_result_mk_ok(s);
+}
+
+// The primary selection's text: what was last selected in any program,
+// which a middle click pastes, on X11 and on Wayland compositors that
+// keep one. As with the clipboard, "" if there's none, and before the
+// window opens.
+LEAN_EXPORT lean_obj_res sv_host_primary_selection(lean_obj_arg io) {
+  if (!host_opened) return lean_io_result_mk_ok(lean_mk_string(""));
+  char *text = SDL_GetPrimarySelectionText();
   lean_object *s = lean_mk_string(text ? text : "");
   SDL_free(text);
   return lean_io_result_mk_ok(s);

@@ -56,6 +56,9 @@ instance : Nonempty Canvas := CanvasPointed.property
 -- programs: empty if there's none, or none that is text, and before
 -- `Host.open`.
 @[extern "sv_host_clipboard"] opaque Host.clipboard : IO String
+-- The primary selection: the text last selected in any program, which a
+-- middle click pastes. Empty if there's none, and before `Host.open`.
+@[extern "sv_host_primary_selection"] opaque Host.primarySelection : IO String
 -- Puts `text` on the clipboard, for a paste here or in other programs.
 -- Does nothing before `Host.open`.
 @[extern "sv_host_set_clipboard"] opaque Host.setClipboard (text : @& String) : IO Unit
@@ -97,7 +100,7 @@ def Mods.ofSDL (bits : UInt32) : Mods :=
   { shift := bits &&& 0x3 != 0, ctrl := bits &&& 0xC0 != 0,
     alt := bits &&& 0x300 != 0 }
 
--- For a button, c is SDL's number for it: 1 left, 3 right, and for a
+-- For a button, c is SDL's number for it: 1 left, 2 middle, 3 right, and for a
 -- press d is how many clicks in a row it makes; for the wheel, c is how
 -- far it turned. The window resized brings its new size in a and b. A
 -- key brings its code and modifiers in a and b; text, the modifiers held
@@ -112,6 +115,7 @@ def Event.decode (r : RawEvent) : Option Event :=
   match (a.get! 0).toUInt32 with
   | 1 => some .quit
   | 2 => if button == 1 then some (.press x y (max 1 clicks))
+         else if button == 2 then some (.middle x y)
          else if button == 3 then some (.menu x y)
          else none
   | 3 => if button == 1 then some (.release x y) else none

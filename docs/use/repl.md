@@ -14,7 +14,9 @@ and Delete edit the line, and Up and Down go back and forth through
 earlier lines. A click in the line puts the cursor there, and a click
 below it, at its end.
 
-Ctrl+V pastes what you copied elsewhere, lines and all: a `def` with a
+A middle click pastes what you last selected in another program: on
+the line, where the click lands; anywhere else in the REPL, at the
+cursor. Ctrl+V pastes what you copied elsewhere, lines and all: a `def` with a
 `where`, a `structure`, a few commands and an `#eval`. Shift+Enter
 starts a new line yourself, indented like the one above (two more after
 `:=`). In a line of several, Home and End go to the start and end of
