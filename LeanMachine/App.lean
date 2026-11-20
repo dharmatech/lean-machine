@@ -114,6 +114,10 @@ inductive Request where
   -- Puts `text` on the clipboard, the one a paste reads, here and in
   -- other programs. Done at once; nothing comes back.
   | copy (text : String)
+  -- Puts `text`, just selected, in the primary selection, the one a
+  -- middle click pastes, here and in other programs. Done at once;
+  -- nothing comes back.
+  | select (text : String)
 
 -- How a run ended.
 inductive Outcome where

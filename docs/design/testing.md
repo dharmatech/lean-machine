@@ -217,6 +217,11 @@ desktop, with Notes focused, a middle click under the REPL's line
 focuses the REPL and pastes `#eval 6 * 7` (`middle-paste.png`); undo
 takes it back, and Notes is focused again. A middle click on Notes'
 title makes no step. Without a window, the primary selection is empty.
+Then selecting sets it: it prints what each event asks for in an
+editor alone (Shift+Right three times, Right, a press, a motion and a
+release, Ctrl+A, Ctrl+C, "x" typed) and a REPL alone (a drag over
+`144`, a click, the drag again, Ctrl+C), and what a drag over `144` in
+the desktop's REPL asks for.
 
 Then reloading. It reloads each app's file in the desktop's Lean three
 times and prints how long each took, what Lean said and the apps it

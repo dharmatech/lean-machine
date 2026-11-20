@@ -98,7 +98,7 @@ def main (args : List String) : IO Unit := do
   let t0 ← IO.monoNanosNow
   let base ← startBase
   let svc : Services := { wake := Host.wake, eval := LeanMachine.eval base,
-                          copy := Host.setClipboard,
+                          copy := Host.setClipboard, select := Host.setPrimarySelection,
                           reload := LeanMachine.reload base, root := projectRoot }
   match args with
   | ["--test"] =>

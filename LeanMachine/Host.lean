@@ -59,6 +59,10 @@ instance : Nonempty Canvas := CanvasPointed.property
 -- The primary selection: the text last selected in any program, which a
 -- middle click pastes. Empty if there's none, and before `Host.open`.
 @[extern "sv_host_primary_selection"] opaque Host.primarySelection : IO String
+-- Puts `text` in the primary selection, for a middle click here or in
+-- other programs. Does nothing before `Host.open`.
+@[extern "sv_host_set_primary_selection"] opaque Host.setPrimarySelection (text : @& String) :
+  IO Unit
 -- Puts `text` on the clipboard, for a paste here or in other programs.
 -- Does nothing before `Host.open`.
 @[extern "sv_host_set_clipboard"] opaque Host.setClipboard (text : @& String) : IO Unit

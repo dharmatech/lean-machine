@@ -39,7 +39,8 @@ pure C functions, and the masking test's hooks into runs.cpp,
   the run took. Files are requests too: `read` a file, `write` one,
   `list` the files under a folder, by paths from the desktop's own
   folder, with outcomes `read` (the text), `wrote` and `listed`.
-  `copy` puts text on the clipboard, with no outcome. Besides presses,
+  `copy` puts text on the clipboard, and `select` in the primary
+  selection, with no outcome. Besides presses,
   keys and the like, an app hears `paste` (a paste key's text) and
   `pasteAt` (a middle click's, where it landed).
   `reload` elaborates a file's text in the desktop's Lean; its outcome
@@ -94,8 +95,9 @@ pure C functions, and the masking test's hooks into runs.cpp,
   (`Offer`, `wordBefore`, `commonPrefix`), drawn in columns; pasted
   text tidied into lines (`pastedLines`); moves in a `Line` that holds
   several, "\n" between them (`lineStart`, `lineEnd`, `up`, `down`);
-  and how far in Enter starts a new line (`indentAfter`); and the
-  colour behind what's selected (`selectedRgb`).
+  and how far in Enter starts a new line (`indentAfter`); the
+  colour behind what's selected (`selectedRgb`); and when a selection
+  settles (`settles`), to be the primary selection.
 - `Apps/Editor.lean`: an editor of the desktop's Lean files. Its file
   is a `Buffer`: the lines above the cursor's (nearest first), the
   cursor's `Line`, and the lines below. Each line is `Lexed`: its text,
@@ -112,7 +114,9 @@ pure C functions, and the masking test's hooks into runs.cpp,
   ([Selecting is a mark and the cursor](editor/selecting.md)). Ctrl+C
   and Ctrl+X ask for it to go on the clipboard (`copy`, `cut`)
   ([Copy and cut are requests](editor/copy-and-cut.md)). A paste
-  (`pasted`) goes in at the cursor; a middle click's, where it lands. It asks
+  (`pasted`) goes in at the cursor; a middle click's, where it lands.
+  `Editor.step`, the app's step, is `heard` with a `select` request
+  when the selection settles. It asks
   for the desktop's Lean and the list of files as it opens, as the REPL
   asks for its Lean; opening and saving are `read` and `write`
   requests, under a tag for each kind, and so is Ctrl+R's `reload`.
@@ -168,7 +172,8 @@ pure C functions, and the masking test's hooks into runs.cpp,
   drag select between two places (`Spot`: a part, the entries counted
   from the oldest, then the line, and a character in it), found by
   `hit` and `pointAt`, and a press on the line moves its cursor there,
-  as a middle click does before it pastes; Ctrl+C asks for what's selected to be copied
+  as a middle click does before it pastes; a selection that settles is
+  asked to be the primary selection (`Repl.step`); Ctrl+C asks for what's selected to be copied
   (`Repl.selected`, `copy`) and ends the selection, and with nothing
   selected stops a run or clears the line
   ([Copying from the REPL](lean/copying-from-the-repl.md)).
@@ -316,7 +321,7 @@ pure C functions, and the masking test's hooks into runs.cpp,
   `Host.open` makes resizable down to a least size, and which
   `Host.setFullscreen` puts in full screen or takes out, and
   `Host.clipboard`, the clipboard's text, and `Host.setClipboard`, and
-  `Host.primarySelection`),
+  `Host.primarySelection` and `Host.setPrimarySelection`),
   `Event.decode` for the events the shim hands back as a `RawEvent` (a
   press brings SDL's count of clicks in a row; the middle button is
   `Event.middle`, the right button `Event.menu`; SDL's keycodes and modifier bits become a
@@ -487,7 +492,8 @@ pure C functions, and the masking test's hooks into runs.cpp,
   - `MiddlePaste.lean`: `testMiddlePaste`: what the decoder makes of the
     middle button; a middle click's paste in an editor alone and a REPL
     alone; on the desktop, into the REPL behind Notes, undone, and on a
-    title ([A middle click pastes the primary selection](drawing/middle-click-pastes.md)).
+    title; then what each event asks for as an editor and a REPL
+    select (`askedAtEach`), and a drag over the desktop's REPL ([A middle click pastes the primary selection](drawing/middle-click-pastes.md)).
   - `Reload.lean`: `testReload`, which runs the phases in `Reload/`
     in turn ([Reloading](reloading/README.md)). `Kit.lean` has what
     they share: `reloadNow` (a file reloaded on the test's thread),
@@ -519,7 +525,7 @@ pure C functions, and the masking test's hooks into runs.cpp,
 - `shim.c`: Cairo draws into an image in memory, and SDL3 shows it in
   one resizable window and hands back events, text input included, the
   wheel, the window resized, and a wake (an SDL user event), and reads
-  and sets the clipboard's text, and reads the primary selection's. The
+  and sets the clipboard's text, and the primary selection's. The
   texture it shows is made again when the canvas is a new size. No GPU
   in the design.
 - `runs.cpp`: stopping a run. A run's thread is inside a guard

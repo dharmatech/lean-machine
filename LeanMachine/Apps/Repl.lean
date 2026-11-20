@@ -663,9 +663,13 @@ def heard (r : Repl) (e : AppEvent) : Option (Repl × List Request) :=
   | _ => typing.keyed e
 
 -- Other modifiers don't matter yet: Ctrl+Left is Left. Whatever changes
--- the REPL, the line's tokens are read again.
+-- the REPL, the line's tokens are read again; when the selection
+-- settles, the REPL asks for it to be the primary selection.
 def step (r : Repl) (e : AppEvent) : Option (Repl × List Request) :=
-  (r.heard e).map fun (r, asks) => (r.relex, asks)
+  (r.heard e).map fun (r', asks) =>
+    let asks := if settles r.dragging r.selection r'.dragging r'.selection
+      then asks ++ [.select r'.selected] else asks
+    (r'.relex, asks)
 
 end Repl
 

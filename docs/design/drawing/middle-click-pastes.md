@@ -26,11 +26,23 @@ The REPL puts its cursor where the click lands on its line, and
 anywhere else pastes at the cursor, as a terminal does; either way the
 view comes back to the line. Other apps ignore it.
 
+The other way, selecting sets it, as in X11 programs: when a selection
+in the editor or the REPL settles, the app asks for its text to be the
+primary selection (`Request.select`, which the loop does at once
+through `Services.select`, `Host.setPrimarySelection` and
+`SDL_SetPrimarySelectionText`, as a copy goes to the clipboard). A
+selection settles when a drag is released, or a key changes it
+(Shift and a move, Ctrl+A) with something selected (`settles`, which
+`Editor.step` and `Repl.step` both ask). A press, a motion in the
+middle of a drag, a click that selects nothing, a copy and an edit ask
+for nothing, so a drag sets the primary selection once, at its end.
+Lean Machine's selection then pastes with a middle click here, or in
+another program, until something else is selected.
+
 Not checked yet in a real window: whether GNOME hands the primary
 selection over when a middle click is the first thing that focuses
-Lean Machine's window. Wayland lets only the focused window read it.
-
-Selecting in Lean Machine doesn't set the primary selection yet, so a
-middle click pastes what was last selected in another program.
+Lean Machine's window (Wayland lets only the focused window read it),
+and whether another program sees what Lean Machine selected
+(`wl-paste --primary` in a terminal shows it).
 
 [↑ Drawing and input](README.md)

@@ -228,6 +228,7 @@ extern bool SDL_PushEvent(void *event);
 extern char *SDL_GetClipboardText(void);
 extern bool SDL_SetClipboardText(const char *text);
 extern char *SDL_GetPrimarySelectionText(void);
+extern bool SDL_SetPrimarySelectionText(const char *text);
 extern void SDL_free(void *mem);
 
 #define SDL_INIT_VIDEO 0x20u
@@ -339,6 +340,14 @@ LEAN_EXPORT lean_obj_res sv_host_primary_selection(lean_obj_arg io) {
   lean_object *s = lean_mk_string(text ? text : "");
   SDL_free(text);
   return lean_io_result_mk_ok(s);
+}
+
+// The primary selection's text set: what was just selected here, for a
+// middle click here or in other programs (SDL copies it). Does nothing
+// before the window opens, as in `--test`.
+LEAN_EXPORT lean_obj_res sv_host_set_primary_selection(b_lean_obj_arg text, lean_obj_arg io) {
+  if (host_opened) SDL_SetPrimarySelectionText(lean_string_cstr(text));
+  return unit();
 }
 
 // The clipboard's text set, for a paste here or in other programs (SDL

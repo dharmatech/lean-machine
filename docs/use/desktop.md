@@ -62,7 +62,9 @@ Ctrl+Shift+V, or Shift+Insert) in Lean Machine: the focused window gets
 the text. The editor and the REPL take it. One Ctrl+Shift+Z takes a
 paste back, and leaves what you typed before it. A middle click pastes
 the text you last selected in another program, with no Ctrl+C, into
-the window under the pointer, where the click lands. Text you copy in the
+the window under the pointer, where the click lands. Text you select in
+the editor or the REPL is what a middle click pastes next, here or in
+another program. Text you copy in the
 editor or the REPL (Ctrl+C) pastes in other programs too
 ([A paste is an event the loop makes](../design/drawing/paste-is-an-event.md)).
 

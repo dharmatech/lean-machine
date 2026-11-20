@@ -634,6 +634,13 @@ def heard (e : Editor) : AppEvent → Option (Editor × List Request)
     | none => if m.ctrl then none else e.chooseKey k
   | _ => none
 
+-- What `heard` makes of an event, and when the selection settles, a
+-- request that it be the primary selection.
+def step (e : Editor) (ev : AppEvent) : Option (Editor × List Request) :=
+  (e.heard ev).map fun (e', asks) =>
+    if settles e.dragging e.selection e'.dragging e'.selection then (e', asks ++ [.select e'.selected])
+    else (e', asks)
+
 end Editor
 
 /-! ## How it looks -/
@@ -789,7 +796,7 @@ def view (e : Editor) (w h : Float) : Picture :=
 end Editor
 
 def editor : App :=
-  App.asking "Editor" ({} : Editor) Editor.heard Editor.view (size := editorSize)
+  App.asking "Editor" ({} : Editor) Editor.step Editor.view (size := editorSize)
     (titleOf := Editor.title)
 
 end LeanMachine

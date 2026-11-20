@@ -60,8 +60,9 @@ def answerNow {σ : Type} (svc : Services) (step : σ → AppEvent → Option (�
       -- The apps it made go nowhere: there's no world here.
       | .reload tag path src => do
         pure (some (.done tag (← svc.reload path src (← IO.CancelToken.new)).1 0))
-      -- Nothing comes back from a copy.
+      -- Nothing comes back from a copy, or a selection.
       | .copy text => do svc.copy text; pure none
+      | .select text => do svc.select text; pure none
     match answer with
     | some answer => return ((step r answer).map (·.1)).getD r
     | none => return r
@@ -89,7 +90,7 @@ def appNow (svc : Services) (a : App) (e : AppEvent) : IO App :=
 
 -- An editor after `evs`, with what it asks for worked out at once.
 def editorNow (svc : Services) (e : Editor) (evs : List AppEvent) : IO Editor :=
-  evs.foldlM (answerNow svc Editor.heard) e
+  evs.foldlM (answerNow svc Editor.step) e
 
 -- The desktop after each of `lines` is typed into the REPL, a press in
 -- its body first, and the runs it asks for have ended; and what came

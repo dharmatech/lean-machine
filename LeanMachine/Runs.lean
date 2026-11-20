@@ -47,6 +47,8 @@ structure Services where
   root : System.FilePath
   -- Puts text on the clipboard (`Request.copy`).
   copy : String → IO Unit := fun _ => pure ()
+  -- Puts text in the primary selection (`Request.select`).
+  select : String → IO Unit := fun _ => pure ()
 
 -- `act`'s outcome, or that it failed and why.
 def attempt (act : IO Outcome) : IO Outcome :=
@@ -135,8 +137,8 @@ structure Runs where
 -- Does what a window's app asked, with `world` the world it asked in.
 -- File requests are answered at once, on this thread. So is a stop with
 -- no run to stop, so an app waiting for a
--- run that's gone (after an undo, say) hears that it stopped. A copy is
--- done at once, and nothing is said of it.
+-- run that's gone (after an undo, say) hears that it stopped. A copy,
+-- and a selection, are done at once, and nothing is said of them.
 def Runs.handle (rs : Runs) (svc : Services) (world : World) (a : Asked) :
     IO (Runs × List Event) := do
   let start (tag : Nat) (go : StopFlag → IO.CancelToken → Ambient → IO (Option Ending)) := do
@@ -157,6 +159,7 @@ def Runs.handle (rs : Runs) (svc : Services) (world : World) (a : Asked) :
     let o ← (fileOutcome svc.root a.request).getD (pure (.failed "not a file request"))
     return (rs, [.done a.win tag o (((← IO.monoNanosNow) - t0) / 1000000)])
   | .copy text => svc.copy text; return (rs, [])
+  | .select text => svc.select text; return (rs, [])
   | .stop tag =>
     match rs.live.find? (·.is a.win tag) with
     | some l => l.stop; return (rs, [])

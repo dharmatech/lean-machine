@@ -16,6 +16,7 @@ def Request.show : Request → String
   | .list tag dir => s!"list {tag} {dir}"
   | .reload tag path _ => s!"reload {tag} {path}"
   | .copy text => s!"copy {text.quote}"
+  | .select text => s!"select {text.quote}"
 
 def Said.show : Said → String
   | .info s => s

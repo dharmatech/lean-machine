@@ -140,6 +140,13 @@ def pastedLines (s : String) : List String :=
 def plainRgb : UInt32 := 0xc0caf5
 def selectedRgb : UInt32 := 0x2e3c64  -- behind what's selected, in the editor and the REPL
 
+-- Has a selection just settled, from `was` to `now`: a drag released, or
+-- a key that changed it, with something selected? Then the editor and
+-- the REPL ask for it to be the primary selection, as X11 programs do.
+def settles {α : Type} [BEq α] (wasDragging : Bool) (was : Option α) (dragging : Bool)
+    (now : Option α) : Bool :=
+  !dragging && now.isSome && (wasDragging || was != now)
+
 -- Tokyo Night's colours for Lean's tokens.
 def TokenKind.rgb : TokenKind → UInt32
   | .keyword => 0xbb9af7
