@@ -52,6 +52,11 @@ push them in, only as far as they have to. A maximized window fills
 the new desktop. Undo doesn't change the window's size: it brings the
 windows back as they were, inside the size it is now.
 
+On GNOME's Wayland session, a long, fast drag of the window's edge can
+stall for a second or two before the window catches up; a slower drag,
+maximizing and F11 aren't affected ([A long, fast resize stalls on
+Wayland](../design/drawing/wayland-resize-stall.md)).
+
 F11 puts the Lean Machine window in full screen: it fills your screen,
 with no frame or title, and the desktop fits itself to it as it does
 to any size. F11 again, or Esc, takes it out. Apps never hear F11.

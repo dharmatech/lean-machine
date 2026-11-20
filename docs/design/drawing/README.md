@@ -10,5 +10,6 @@
 - [Colours on the grid](colours-on-the-grid.md)
 - [The wheel](wheel.md)
 - [A resized window draws on a new canvas](new-canvas.md)
+- [A long, fast resize stalls on Wayland](wayland-resize-stall.md)
 
 [↑ Design](../README.md)
