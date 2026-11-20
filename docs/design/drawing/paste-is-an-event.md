@@ -24,8 +24,8 @@ characters go, so a terminal's colour codes lose their Esc.
 The editor puts the lines in the file at the cursor, keeping their own
 indent (`Buffer.paste`), and reads each with what the line before left
 open (`Buffer.relexAbove`), so a comment pasted across lines is
-coloured as one. The REPL takes one line, ignoring blank lines around
-it; several lines only leave a note for now.
+coloured as one. The REPL puts them in its line, ignoring blank lines
+around them ([The REPL's line holds several](../lean/several-lines.md)).
 
 On GNOME's Wayland session, in a real window, `Host.clipboard` read the
 same 949 bytes as `wl-paste`, from a copy in Chromium that had HTML on

@@ -101,10 +101,7 @@ partial def goTo (b : Buffer) (row col : Nat) : Buffer :=
 -- `by`, `then` or `else`.
 def enter (b : Buffer) : Buffer :=
   let before := String.ofList b.line.before.reverse
-  let indent := min b.line.cursor (b.line.chars.takeWhile (· == ' ')).length
-  let opens := [":=", " do", "where", "=>", " by", "then", "else"].any
-    (before.trimAsciiEnd.toString.endsWith ·)
-  let pad := String.ofList (List.replicate (indent + if opens then 2 else 0) ' ')
+  let pad := String.ofList (List.replicate (indentAfter b.line.chars b.line.cursor) ' ')
   { b with above := { b.here with text := before } :: b.above,
            line := { before := pad.toList.reverse, after := b.line.after },
            row := b.row + 1 }

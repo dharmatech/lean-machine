@@ -150,10 +150,16 @@ alone takes two lines, with Windows line ends, a tab and a comment
 across them, at the start of a scratch file's second line, and prints
 each line with what it leaves open; then one line at the end of a
 line, and a paste into the list of files. A REPL alone takes a line
-with blank lines around it and evaluates it, and leaves a note for two
-lines. On the desktop, "1 + " typed and "2" pasted into the REPL, undone
-back to "1 + "; then a snippet pasted into Clock.lean
-(`paste-editor.png`), its `•` gone after undo.
+with blank lines around it and evaluates it, then a block of four
+lines: it prints where Up, End, Home and Down put the cursor, what
+Enter evaluates, the block recalled by Up and walked to its first line,
+the line before it, a block typed with Shift+Enter whose error says its
+line, and the rows a view 200 high shows of 30 lines with the cursor on
+the first. On the desktop, "1 + " typed and "2" pasted into the REPL,
+undone back to "1 + "; a snippet pasted into Clock.lean
+(`paste-editor.png`), its `•` gone after undo; and the REPL maximized,
+a `structure` and an `#eval` pasted and evaluated, and a `def` pasted
+with the cursor moved up into it (`paste-repl.png`).
 
 Then reloading. It reloads each app's file in the desktop's Lean three
 times and prints how long each took, what Lean said and the apps it

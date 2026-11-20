@@ -7,6 +7,7 @@
 - [Dynamic scope by hand](dynamic-scope.md)
 - [A value that carries its functions](value-carries-functions.md)
 - [A REPL asks for its Lean](repl-asks-for-lean.md)
+- [The REPL's line holds several](several-lines.md)
 - [Reading an environment from two threads](environment-two-threads.md)
 
 [↑ Design](../README.md)

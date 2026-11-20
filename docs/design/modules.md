@@ -88,8 +88,10 @@ pure C functions, and the masking test's hooks into runs.cpp,
   being edited, as the characters before the cursor (nearest first)
   and those after it; Tokyo Night's colours for tokens; rows of
   coloured runs (`runRows`), a `mono` each; what Tab offers
-  (`Offer`, `wordBefore`, `commonPrefix`), drawn in columns; and
-  pasted text tidied into lines (`pastedLines`).
+  (`Offer`, `wordBefore`, `commonPrefix`), drawn in columns; pasted
+  text tidied into lines (`pastedLines`); moves in a `Line` that holds
+  several, "\n" between them (`lineStart`, `lineEnd`, `up`, `down`);
+  and how far in Enter starts a new line (`indentAfter`).
 - `Apps/Editor.lean`: an editor of the desktop's Lean files. Its file
   is a `Buffer`: the lines above the cursor's (nearest first), the
   cursor's `Line`, and the lines below. Each line is `Lexed`: its text,
@@ -123,12 +125,16 @@ pure C functions, and the masking test's hooks into runs.cpp,
   interrupted, through any `finally`, after what Lean said up to then,
   or cut off, past any `finally`. The line is a pair of lists, the
   characters before the cursor (nearest first) and those after it, so
-  every edit is a cons or an uncons. Up and Down walk the history and
-  come back to the line being typed. The transcript is a list, newest first, and the view
+  every edit is a cons or an uncons. It may hold several lines, "\n"
+  between them, from a paste or Shift+Enter; Up and Down move among
+  them, and from the first or last walk the history and come back to
+  the line being typed. Each of its lines starts its own rows
+  (`promptRows`, `promptCursor`)
+  ([The REPL's line holds several](lean/several-lines.md)). The transcript is a list, newest first, and the view
   cuts only the newest entries into rows, as many as fill the window;
   long lines wrap at the window's width in columns. Rows start at the
   top, and once they overflow the oldest go off the top, so the newest
-  and the line being edited stay in view. Whatever changes the REPL,
+  and the line being edited stay in view, the cursor's row always. Whatever changes the REPL,
   its Lean reads the line's tokens again (`relex`), and Enter keeps them
   with the line in the transcript, so the view only colours: each
   character takes its token's colour, and a row is drawn as runs of
@@ -337,7 +343,8 @@ pure C functions, and the masking test's hooks into runs.cpp,
     calling thread with `runCommands`, its own loop over Lean's parser
     and `elabCommandTopLevel`, with the run's cancel token; once it's
     set, no more commands are elaborated and the line has stopped,
-    cleanly. An `Env` holds Lean's `Command.State`, the environment and
+    cleanly. What Lean said comes back as `Said`s (`saidOf`), with
+    the column, and the line too for a source of several. An `Env` holds Lean's `Command.State`, the environment and
     the scopes left open, with `lexLine` and `completeIn` over it
     (`Env.of`).
   - `Reload.lean`: `reload` refuses a file whose module (`moduleOf` its
@@ -419,8 +426,9 @@ pure C functions, and the masking test's hooks into runs.cpp,
     the desktop with Clock.lean, and what it costs
     ([The editor](editor/README.md)).
   - `Paste.lean`: `testPaste`: text pasted into an editor alone, its
-    list of files and a REPL alone, then into the desktop's REPL and
-    Clock.lean, each undone
+    list of files and a REPL alone (a block moved through, evaluated,
+    recalled, and one taller than the view), then into the desktop's
+    REPL and Clock.lean, each undone, and a block in the maximized REPL
     ([A paste is an event the loop makes](drawing/paste-is-an-event.md)).
   - `Reload.lean`: `testReload`, which runs the phases in `Reload/`
     in turn ([Reloading](reloading/README.md)). `Kit.lean` has what

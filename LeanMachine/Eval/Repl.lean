@@ -104,11 +104,14 @@ def startBase : BaseIO (Task (Except IO.Error Held)) :=
   IO.asTask (prio := .dedicated) (unsafe importBase)
 
 -- What Lean said, in the order it said it. `shift` is how many
--- characters were put in front of the line.
-def saidOf (msgs : Array Message) (shift : Nat) : IO (List Said) :=
+-- characters were put in front of the first line. Where a source of
+-- several lines (`several`) went wrong, the line is said too.
+def saidOf (msgs : Array Message) (shift : Nat) (several : Bool) : IO (List Said) :=
   msgs.toList.mapM fun m => do
     let text := (← m.data.toString).trimAscii.toString
-    let at_ := if m.pos.column > shift then s!"col {m.pos.column - shift}: " else ""
+    let col := if m.pos.line == 1 then m.pos.column - shift else m.pos.column
+    let at_ := if several then s!"line {m.pos.line}, col {col}: "
+      else if m.pos.column > shift then s!"col {col}: " else ""
     return match m.severity with
       | .information => .info text
       | .warning => .warning s!"{at_}{text}"
@@ -127,7 +130,7 @@ def eval (base : Task (Except IO.Error Held)) (src : String)
   let isTerm := (Parser.runParserCategory s.env `term src).isOk
   let pre := if isTerm then "#eval " else ""
   let (s, msgs, stopped) ← runCommands s (pre ++ src) cancel
-  let said ← saidOf msgs pre.length
+  let said ← saidOf msgs pre.length (src.contains '\n')
   if stopped then
     return .stopped (said.filter fun | .error e => !(e.splitOn stopDetails).length > 1 | _ => true) true
   return .evaluated said (Env.of { h with cmd := { s with traceState := {} } })

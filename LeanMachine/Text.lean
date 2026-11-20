@@ -53,7 +53,72 @@ def right (l : Line) : Line :=
 def toStart (l : Line) : Line := { before := [], after := l.chars }
 def toEnd (l : Line) : Line := { before := l.after.reverse ++ l.before, after := [] }
 
+/-! ### Several lines in one
+
+The REPL's line may hold several, with "\n" between them; the editor's
+never does, so these are the same as the moves above there. -/
+
+-- The cursor's column in its own line: the characters back to a "\n".
+def column (l : Line) : Nat := (l.before.takeWhile (· != '\n')).length
+
+-- The start and end of the cursor's own line: Home and End.
+def lineStart (l : Line) : Line :=
+  let (cs, rest) := l.before.span (· != '\n')
+  { before := rest, after := cs.reverse ++ l.after }
+
+def lineEnd (l : Line) : Line :=
+  let (cs, rest) := l.after.span (· != '\n')
+  { before := cs.reverse ++ l.before, after := rest }
+
+-- Right `n` characters, but not past the end of the cursor's line.
+def forward (l : Line) : Nat → Line
+  | 0 => l
+  | n + 1 =>
+    match l.after with
+    | c :: cs => if c == '\n' then l else forward { before := c :: l.before, after := cs } n
+    | [] => l
+
+-- To the line above or below, at the same column or that line's end;
+-- `none` from the first line, or the last.
+def up (l : Line) : Option Line :=
+  match l.lineStart.before with
+  | '\n' :: rest => some ((Line.lineStart { before := rest, after := [] }).forward l.column
+      |> fun to => { to with after := to.after ++ '\n' :: l.lineStart.after })
+  | _ => none
+
+def down (l : Line) : Option Line :=
+  match l.lineEnd.after with
+  | '\n' :: rest => some (forward { before := '\n' :: l.lineEnd.before, after := rest } l.column)
+  | _ => none
+
+-- The cursor's own line: its characters.
+def own (l : Line) : List Char :=
+  (l.before.takeWhile (· != '\n')).reverse ++ l.after.takeWhile (· != '\n')
+
 end Line
+
+#guard (Line.at "ab\ncdef\ng" 5).column == 2
+#guard ((Line.at "ab\ncdef\ng" 5).up.map (·.cursor)) == some 2
+#guard ((Line.at "abcd\nef" 7).up.map fun l => (l.cursor, l.text)) == some (2, "abcd\nef")
+#guard ((Line.at "ab\ncdef" 1).down.map (·.cursor)) == some 4
+#guard ((Line.at "ab\ncdef" 4).down.map (·.cursor)) == none
+#guard (Line.at "ab\ncdef\ng" 5).lineStart.cursor == 3
+#guard (Line.at "ab\ncdef\ng" 5).lineEnd.cursor == 7
+#guard String.ofList (Line.at "ab\ncdef\ng" 5).own == "cdef"
+
+-- How far in a new line starts when Enter cuts `line` (its characters)
+-- after `col` of them: as far in as it starts, or the cut if that's
+-- sooner, and two more after `:=`, `do`, `where`, `=>`, `by`, `then` or
+-- `else`.
+def indentAfter (line : List Char) (col : Nat) : Nat :=
+  let before := String.ofList (line.take col)
+  let opens := [":=", " do", "where", "=>", " by", "then", "else"].any
+    (before.trimAsciiEnd.toString.endsWith ·)
+  min col (line.takeWhile (· == ' ')).length + if opens then 2 else 0
+
+#guard indentAfter "  def x :=".toList 10 == 4
+#guard indentAfter "    2 * n".toList 9 == 4
+#guard indentAfter "    2 * n".toList 2 == 2
 
 /-! ## Pasted text -/
 
