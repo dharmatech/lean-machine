@@ -196,6 +196,23 @@ def World.openMenu (world : World) (x y : Float) : World :=
   { world with menu := some ⟨max 0 (min x (world.screen.w - menuW)),
                              max 0 (min y (world.screen.barY - world.menuH))⟩ }
 
+-- The world on screen `s`, the host's window resized. Each window keeps
+-- as much of itself on the screen as it can (`Rect.keepOn`), and so does
+-- the place a maximized one goes back to; a maximized window fills the
+-- new desktop. An app hears its size if it changed. An open menu stays
+-- on the screen. The taskbar is laid out from the screen each time.
+def World.onScreen (world : World) (s : Screen) : World :=
+  if s == world.screen then world else
+  let old := world.screen
+  let world := { world with screen := s }
+  let world := world.each (fun _ => true) fun w =>
+    match w.restore with
+    | some r => { w with restore := some (r.keepOn old s) }.place s.desktop
+    | none => w.place (w.rect.keepOn old s)
+  match world.menu with
+  | some m => world.openMenu m.x m.y
+  | none => world
+
 -- What an event does to the windows, with no menu in the way.
 def World.stepWindows (world : World) : Event → World
   | .press x y clicks =>
@@ -257,6 +274,7 @@ def World.stepWindows (world : World) : Event → World
     | some w => world.launch app (w.x + 40) (w.y + 40)
     | none => world.launch app world.mouseX world.mouseY
   | .reload win apps => apps.foldl (fun world (name, app) => world.reload win name app) world
+  | .screen w h => world.onScreen ⟨w, h⟩
   | .quit => world
 
 -- With the menu open, a press on an item opens its app where the menu

@@ -18,7 +18,9 @@ screen, and the taskbar keeps its top (`Taskbar.y`), so that the view
 draws its buttons where a press finds them. Main.lean makes the canvas
 and opens the window at the size of the start's screen.
 
-Nothing changes the screen yet. Every image `--test` writes came out
-the same as before, but for the times some of them show.
+When this landed, nothing changed the screen yet. Every image `--test`
+wrote came out the same as before, apart from the times some of them
+show. What changes it now: [A smaller screen pushes windows
+in](screen-resized.md)
 
 [↑ The world and apps](README.md)

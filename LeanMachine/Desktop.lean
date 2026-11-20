@@ -22,9 +22,11 @@ def Desktop.commit (d : Desktop) (next : World) : Desktop :=
   { now := next,
     past := ({ d.now with menu := none, outbox := [] } :: d.past).take 500 }
 
+-- The world before, on the screen there is now: the screen is the size
+-- of the host's window, which undo can't change.
 def Desktop.undo (d : Desktop) : Desktop :=
   match d.past with
-  | prev :: rest => { now := prev, past := rest }
+  | prev :: rest => { now := prev.onScreen d.now.screen, past := rest }
   | [] => d
 
 -- Ctrl+Shift+Z undoes. Whether anything else starts a step undo can

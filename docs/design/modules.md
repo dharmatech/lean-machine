@@ -242,12 +242,17 @@ pure C functions, and the masking test's hooks into runs.cpp,
   item of its name, or is added, and the app of every window opened
   from it, but the window that asked; it starts afresh there
   (`World.fresh`), at the window's place and size. With no such window, it
-  opens one beside the window that asked. `World.commits` says which
+  opens one beside the window that asked. A new size for the host's
+  window (`Event.screen`) goes through `World.onScreen`: a maximized
+  window fills the new desktop, the others are pushed in from the right
+  edge and the bar as far as they have to be (`Rect.keepOn`), and an
+  open menu is kept on the screen. `World.commits` says which
   events start a step undo can return to: a press that does something
   (not one that only closes the menu or misses the taskbar's buttons),
   a reload, and Ctrl+Shift+M and Ctrl+Shift+H.
 - `Desktop.lean`: `Desktop` is the world now and every world before it;
-  undo (Ctrl+Shift+Z) takes the previous one, apps' states included.
+  undo (Ctrl+Shift+Z) takes the previous one, apps' states included,
+  on the screen there is now (`World.onScreen`).
   The worlds kept for undo have empty outboxes, so undo never asks again.
   The start desktop opens the REPL, Clock, Inspector and Notes. Also `catalog`,
   what the menu opens (Clock, REPL, Editor, Inspector, Notes, Boids), each
@@ -389,6 +394,9 @@ pure C functions, and the masking test's hooks into runs.cpp,
   - `Minimize.lean`: `testMinimize`: windows minimized and brought
     back, the taskbar's buttons, and the boxes on a title
     ([Minimizing](world/minimizing.md)).
+  - `Screen.lean`: `testScreen`: the start desktop on smaller and
+    bigger screens, a maximized window, undo, and windows hanging off
+    the edge ([A smaller screen pushes windows in](world/screen-resized.md)).
   - `Highlight.lean`: `testLean`: the tokens the REPL's Lean reads in a
     line, what Tab makes of names, on a REPL alone and on the desktop,
     and what each costs ([Highlighting](highlighting/README.md)).

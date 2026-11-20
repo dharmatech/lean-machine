@@ -79,6 +79,25 @@ def Rect.drag (r : Rect) (screen : Screen) (es : Edges) (dx dy : Float) : Rect :
     else bottom
   ⟨left, top, right - left, bottom - top⟩
 
+-- `r` moved from screen `old` to screen `new`: with as much of it on the
+-- screen as there was, if `new` has room. A screen that grows moves
+-- nothing. One that shrinks pushes it left by its right edge and up by
+-- the bar, so that a window hanging off the edge hangs off it as far,
+-- but no further than the screen's left and top edges (or where it was,
+-- if it was past them).
+def Rect.keepOn (r : Rect) (old new : Screen) : Rect :=
+  -- How much of it was left of the right edge, and above the bar.
+  let seenW := min r.w (old.w - r.x)
+  let seenH := min r.h (old.barY - r.y)
+  { r with x := max (min 0 r.x) (min r.x (new.w - seenW)),
+           y := max (min 0 r.y) (min r.y (new.barY - seenH)) }
+
+#guard (Rect.keepOn ⟨500, 340, 420, 260⟩ {} ⟨900, 600⟩) == ⟨480, 310, 420, 260⟩
+#guard (Rect.keepOn ⟨80, 70, 566, 331⟩ {} ⟨900, 600⟩) == ⟨80, 70, 566, 331⟩
+#guard (Rect.keepOn ⟨1000, 340, 420, 260⟩ {} ⟨900, 600⟩) == ⟨620, 310, 420, 260⟩  -- 140 off, still
+#guard (Rect.keepOn ⟨80, 70, 566, 331⟩ {} ⟨400, 300⟩) == ⟨0, 0, 566, 331⟩
+#guard (Rect.keepOn ⟨500, 340, 420, 260⟩ {} ⟨1600, 1000⟩) == ⟨500, 340, 420, 260⟩
+
 inductive Event where
   | quit
   -- The left button; `clicks` is how many in a row it makes: 2 for the
@@ -97,6 +116,7 @@ inductive Event where
   -- From the loop: a reload that window `win` asked for made these apps,
   -- each the new code of the declaration it's named by.
   | reload (win : Nat) (apps : List (Lean.Name × App))
+  | screen (w h : Float)      -- from the host: its window is now w by h
 
 structure Win where
   id : Nat
@@ -198,7 +218,7 @@ def Win.toApp (w : Win) : Event → Option AppEvent
   | .frame ms => some (.frame ms)
   | .done _ tag o ms => some (.done tag o ms)
   | .wheel x y dy => some (.wheel (x - w.bodyX) (y - w.bodyY) dy)
-  | .menu .. | .launch .. | .reload .. | .quit => none
+  | .menu .. | .launch .. | .reload .. | .screen .. | .quit => none
 
 -- The window after its app hears `e`, in the app's own terms already,
 -- and what the app asked for.

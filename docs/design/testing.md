@@ -83,6 +83,18 @@ its title left of the boxes, on its top edge above them and on its right
 edge (only the first), and on a maximized Notes' green box (`boxes.png`,
 the REPL's behind Notes; `boxes-max.png`, the restore glyph).
 
+Then the screen resized. It prints where each window is on the start
+desktop. On a 900 × 600 screen with the menu open at the bottom right,
+Notes is pushed in, the menu is kept on the screen and the taskbar's
+hint gives way (`screen-small.png`). On a 1600 × 1000 screen nothing
+moves (`screen-large.png`). Notes, maximized and then put on 900 × 600,
+fills the new desktop and hears its size; its box restores it inside
+the smaller screen. Clock is maximized and the screen made smaller,
+which makes no undo step; undo restores Clock and keeps the 900 × 600
+screen, and going back to 1280 × 800 moves nothing. Notes dragged 140
+pixels off the right edge is still 140 off on 900 × 600. On 400 × 300,
+windows stop at the left and top edges.
+
 Then frames. The start desktop doesn't animate. A spinner (a line that
 the frames it hears turn, the last frame's time in its title) opens as
 a run in the REPL would open it. After frames at 1000 and 1017 ms, its

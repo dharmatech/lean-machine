@@ -17,5 +17,6 @@
 - [A pattern variable can be a constructor](pattern-variable-constructor.md)
 - [An app hears a drag](drags.md)
 - [The screen is in the world](screen.md)
+- [A smaller screen pushes windows in](screen-resized.md)
 
 [↑ Design](../README.md)

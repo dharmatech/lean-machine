@@ -2,6 +2,7 @@ import Tests.Desktop
 import Tests.Resize
 import Tests.Maximize
 import Tests.Minimize
+import Tests.Screen
 import Tests.Frames
 import Tests.Boids
 import Tests.Slider
@@ -26,6 +27,7 @@ def all (c : Canvas) (svc : Services) : IO Unit := do
   testResize c svc
   testMaximize c svc
   testMinimize c
+  testScreen
   testFrames c svc
   testBoids c
   testSlider c svc
