@@ -128,6 +128,15 @@ the three lines of [A slider, made in the REPL](../explore/slider.md)
 are typed into a REPL, which opens the slider, and its knob is dragged
 near the end (`slider-repl.png`).
 
+Then every `lean` block of [Pictures, from the
+REPL](../explore/pictures.md), read from the page itself, is pasted
+into the REPL as the page says (a click in the REPL, a paste, Enter):
+it prints what came back from each and which window has the focus,
+draws the desktop after them (`pictures.png`), and again with the
+windows they opened moved apart (`pictures-apart.png`). Three undos
+then take back the last window, the click on the REPL, and the window
+before.
+
 Between the REPL's highlighting and its runs, `--test` tries the
 editor. It prints the tokens of six lines of a file that leave a
 comment, a nested comment, a string and a doc comment open for the next

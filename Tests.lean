@@ -6,6 +6,7 @@ import Tests.Screen
 import Tests.Frames
 import Tests.Boids
 import Tests.Slider
+import Tests.Pictures
 import Tests.Highlight
 import Tests.Editor
 import Tests.Paste
@@ -37,6 +38,7 @@ def all (c : Canvas) (svc : Services) : IO Unit := do
   testFrames c svc
   testBoids c
   testSlider c svc
+  testPictures c svc
   testLean c svc
   testEditor c svc
   testPaste c svc

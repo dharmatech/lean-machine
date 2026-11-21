@@ -3,6 +3,8 @@
 Small experiments to try in the REPL and the editor, each one short and
 self-contained, each ending with where you might go next.
 
+- [Pictures, from the REPL](pictures.md): a circle, shapes, text and
+  a map of the desktop, each a paste away, in a window of its own
 - [A spinner, made in the REPL](spinner.md): an app that asks for
   frames
 - [Change Boids while it flies](boids-live.md): an app reloaded from
