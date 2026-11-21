@@ -25,6 +25,10 @@ be reloaded, nor can the other modules the desktop's Lean has built in
 (Text.lean, World.lean, …). Ctrl+R on one of them says so; rebuild the
 desktop to change them.
 
+To undo a reload, or put a file back as git has it: [Putting a file
+back](putting-back.md). To try it: [Change the clock while it
+ticks](../explore/clock-live.md).
+
 How it works: [Reloading](../design/reloading/README.md)
 
 [↑ The editor](editor.md)

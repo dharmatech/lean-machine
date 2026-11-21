@@ -5,6 +5,8 @@ self-contained, each ending with where you might go next.
 
 - [Pictures, from the REPL](pictures.md): a circle, shapes, text and
   a map of the desktop, each a paste away, in a window of its own
+- [Change the clock while it ticks](clock-live.md): an app's own file,
+  edited and reloaded, and put back
 - [A spinner, made in the REPL](spinner.md): an app that asks for
   frames
 - [Change Boids while it flies](boids-live.md): an app reloaded from

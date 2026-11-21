@@ -48,5 +48,6 @@ The simulation is in the REPL too. Right-click, REPL, and type:
 - [A compiled simulation under a reloaded app](../design/reloading/compiled-under-reloaded.md):
   why the simulation isn't reloaded too.
 - [Using Boids](../use/boids.md): its keys.
+- [Putting a file back](../use/putting-back.md), if you saved.
 
 [↑ Explore](README.md)

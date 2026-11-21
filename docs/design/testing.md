@@ -259,4 +259,16 @@ reloaded, at 150 boids and at 1000, and prints RSS
 over 40 reloads of Clock.lean and 10 of Editor.lean, each kept for
 undo.
 
+Then the changes of [Change the clock while it
+ticks](../explore/clock-live.md), each made on the line the page names
+(a line that hasn't the text fails the test), one after another, with a
+reload after each; the page's mistake, which reloads nothing; and
+Placeholder.lean's dots, which reload Inspector and Notes. On the
+desktop, an editor on Clock.lean gets all the changes pasted over the
+file and reloads it (`clock-live.png`): the clock is titled Time, in
+its window and in the menu. Then the page's ways back: undo brings the
+Clock back with the changes still in the editor, Ctrl+R makes it Time
+again, and Ctrl+O twice, the file opened again and Ctrl+R make it the
+file's. Clock.lean on disk is checked to be as it was.
+
 [↑ Design](README.md)
